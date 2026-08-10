@@ -25,9 +25,10 @@ def get_users(current_user: User = Depends(require_roles(["Admin", "FleetManager
     return users
 
 @router.post("/users", status_code=status.HTTP_201_CREATED)
-def create_user(data: dict, current_user: User = Depends(require_roles(["Admin", "FleetManager"])), db: Session = Depends(get_db)):
-    # Simple dict parsing to avoid pydantic model overhead for quick mock
+def create_user(data: dict = Body(...), current_user: User = Depends(require_roles(["Admin", "FleetManager"])), db: Session = Depends(get_db)):
     email = data.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
     
@@ -46,7 +47,10 @@ def create_user(data: dict, current_user: User = Depends(require_roles(["Admin",
 
 @router.delete("/users/{user_id}")
 def delete_user(user_id: str, current_user: User = Depends(require_roles(["Admin", "FleetManager"])), db: Session = Depends(get_db)):
-    user_uuid = uuid.UUID(user_id)
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user_id UUID format")
     user = db.query(User).filter(User.user_id == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -78,8 +82,11 @@ def get_drivers(current_user: User = Depends(get_current_user), db: Session = De
     return drivers_list
 
 @router.post("/drivers", status_code=status.HTTP_201_CREATED)
-def create_driver(data: dict, current_user: User = Depends(require_roles(["Admin", "FleetManager"])), db: Session = Depends(get_db)):
+def create_driver(data: dict = Body(...), current_user: User = Depends(require_roles(["Admin", "FleetManager"])), db: Session = Depends(get_db)):
     email = data.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+        
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
     
@@ -93,12 +100,13 @@ def create_driver(data: dict, current_user: User = Depends(require_roles(["Admin
         role="Driver"
     )
     db.add(new_user)
+    db.flush()  # Ensure user is flushed to DB before driver foreign key reference is inserted
     
     new_driver = Driver(
         driver_id=uuid.uuid4(),
         user_id=user_id,
         license_number=data.get("license_number"),
-        experience_years=int(data.get("experience_years", 0)),
+        experience_years=int(data.get("experience_years", 0)) if data.get("experience_years") else 0,
         address=data.get("address", ""),
         status=data.get("status", "Active")
     )
@@ -109,7 +117,10 @@ def create_driver(data: dict, current_user: User = Depends(require_roles(["Admin
 
 @router.delete("/drivers/{driver_id}")
 def delete_driver(driver_id: str, current_user: User = Depends(require_roles(["Admin", "FleetManager"])), db: Session = Depends(get_db)):
-    driver_uuid = uuid.UUID(driver_id)
+    try:
+        driver_uuid = uuid.UUID(driver_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid driver_id UUID format")
     driver = db.query(Driver).filter(Driver.driver_id == driver_uuid).first()
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
@@ -156,7 +167,7 @@ def get_vehicles(current_user: User = Depends(get_current_user), db: Session = D
     return vehicles_list
 
 @router.post("/vehicles", status_code=status.HTTP_201_CREATED)
-def create_vehicle(data: dict, current_user: User = Depends(require_roles(["Admin", "FleetManager"])), db: Session = Depends(get_db)):
+def create_vehicle(data: dict = Body(...), current_user: User = Depends(require_roles(["Admin", "FleetManager"])), db: Session = Depends(get_db)):
     assigned_driver_uuid = None
     assigned_driver_val = data.get("assigned_driver")
     if assigned_driver_val and str(assigned_driver_val).strip():
@@ -184,7 +195,10 @@ def create_vehicle(data: dict, current_user: User = Depends(require_roles(["Admi
 
 @router.delete("/vehicles/{vehicle_id}")
 def delete_vehicle(vehicle_id: str, current_user: User = Depends(require_roles(["Admin", "FleetManager"])), db: Session = Depends(get_db)):
-    vehicle_uuid = uuid.UUID(vehicle_id)
+    try:
+        vehicle_uuid = uuid.UUID(vehicle_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid vehicle_id UUID format")
     vehicle = db.query(Vehicle).filter(Vehicle.vehicle_id == vehicle_uuid).first()
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehicle not found")
@@ -396,15 +410,19 @@ def get_maintenance(current_user: User = Depends(require_roles(["Admin", "FleetM
     return maintenance_list
 
 @router.post("/maintenance", status_code=status.HTTP_201_CREATED)
-def create_maintenance(data: dict, current_user: User = Depends(require_roles(["Admin", "FleetManager"])), db: Session = Depends(get_db)):
+def create_maintenance(data: dict = Body(...), current_user: User = Depends(require_roles(["Admin", "FleetManager"])), db: Session = Depends(get_db)):
     m_id = uuid.uuid4()
-    v_id = uuid.UUID(data.get("vehicle_id"))
+    try:
+        v_id = uuid.UUID(str(data.get("vehicle_id")))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid vehicle_id UUID format")
+        
     m_type = data.get("maintenance_type")
     s_date = datetime.date.fromisoformat(data.get("service_date"))
     n_date = datetime.date.fromisoformat(data.get("next_service_date"))
     cost = float(data.get("cost", 0.0))
     remarks = data.get("remarks", "")
-    status = data.get("status", "pending")
+    m_status = data.get("status", "pending")
     
     query = text("""
         INSERT INTO vehicle_maintenance (maintenance_id, vehicle_id, maintenance_type, service_date, next_service_date, cost, remarks, status)
@@ -418,14 +436,17 @@ def create_maintenance(data: dict, current_user: User = Depends(require_roles(["
         "n_date": n_date,
         "cost": cost,
         "remarks": remarks,
-        "status": status
+        "status": m_status
     })
     db.commit()
     return {"message": "Maintenance record created successfully", "maintenance_id": str(m_id)}
 
 @router.delete("/maintenance/{maintenance_id}")
 def delete_maintenance(maintenance_id: str, current_user: User = Depends(require_roles(["Admin", "FleetManager"])), db: Session = Depends(get_db)):
-    m_uuid = uuid.UUID(maintenance_id)
+    try:
+        m_uuid = uuid.UUID(maintenance_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid maintenance_id UUID format")
     query = text("DELETE FROM vehicle_maintenance WHERE maintenance_id = :m_id")
     db.execute(query, {"m_id": m_uuid})
     db.commit()
@@ -442,7 +463,10 @@ def get_notifications(current_user: User = Depends(get_current_user), db: Sessio
 
 @router.put("/notifications/{notification_id}/read")
 def read_notification(notification_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    n_uuid = uuid.UUID(notification_id)
+    try:
+        n_uuid = uuid.UUID(notification_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid notification_id UUID format")
     notif = db.query(Notification).filter(Notification.notification_id == n_uuid).first()
     if not notif:
         raise HTTPException(status_code=404, detail="Notification not found")
@@ -451,10 +475,17 @@ def read_notification(notification_id: str, current_user: User = Depends(get_cur
     return {"message": "Notification marked as read"}
 
 @router.post("/notifications", status_code=status.HTTP_201_CREATED)
-def create_notification(data: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def create_notification(data: dict = Body(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    user_uuid = None
+    if data.get("user_id"):
+        try:
+            user_uuid = uuid.UUID(str(data.get("user_id")))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid user_id UUID format")
+            
     new_notif = Notification(
         notification_id=uuid.uuid4(),
-        user_id=uuid.UUID(data.get("user_id")) if data.get("user_id") else None,
+        user_id=user_uuid,
         title=data.get("title"),
         message=data.get("message"),
         type=data.get("type", "info"),
