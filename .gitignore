@@ -1,0 +1,30 @@
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Backend
+fleetflow-backend/venv/
+fleetflow-backend/.venv/
+fleetflow-backend/__pycache__/
+fleetflow-backend/**/__pycache__/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Python
+*.pyc
+*.pyo
+*.pyd
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
