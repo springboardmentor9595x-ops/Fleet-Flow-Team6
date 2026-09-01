@@ -3,7 +3,8 @@ import os
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -13,8 +14,17 @@ if str(BACKEND_DIR) not in sys.path:
 from app.routers.auth import router as auth_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.fleet import router as fleet_router
+from app.routers.trips import router as trips_router
 from app.routers.shipments import router as shipments_router
 from app.routers.gps import router as gps_router, gps_simulation_loop
+from app.routers.maintenance import router as maintenance_router
+from app.routers.drivers import router as drivers_router
+from app.routers.fuel import router as fuel_router
+from app.routers.analytics import router as analytics_router
+from app.routers.notifications import router as notifications_router
+from app.routers.reports import router as reports_router
+from app.routers.attendance import router as attendance_router
+from app.celery_worker import run_maintenance_alert_check
 from config import settings
 
 app = FastAPI(
@@ -30,17 +40,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    print(f"GLOBAL SERVER EXCEPTION on {request.url}: {exc}")
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "traceback": traceback.format_exc()}
+    )
+
 app.include_router(auth_router)
 app.include_router(dashboard_router)
 app.include_router(fleet_router)
+app.include_router(trips_router)
 app.include_router(shipments_router)
 app.include_router(gps_router)
+app.include_router(maintenance_router)
+app.include_router(drivers_router)
+app.include_router(fuel_router)
+app.include_router(analytics_router)
+app.include_router(notifications_router)
+app.include_router(reports_router)
+app.include_router(attendance_router)
 
 
 @app.on_event("startup")
 async def startup_event():
     # Launch background GPS simulation task
     asyncio.create_task(gps_simulation_loop())
+    # Run initial maintenance alert check
+    try:
+        run_maintenance_alert_check()
+    except Exception as e:
+        print(f"Initial maintenance alert check error: {e}")
 
     # Email configuration debugging and validation
     errors = []
@@ -77,11 +110,10 @@ async def startup_event():
     if errors:
         print("\n[CRITICAL ERROR] SMTP CONFIGURATION IS INVALID:")
         for err in errors:
-            print(f"  [ERROR] {err}")
+            print(f" [ERROR] {err}")
     else:
         print("\n[OK] SMTP Configuration is fully populated and parsed.")
     print("==================================================\n")
-
 
 @app.get("/")
 def home():

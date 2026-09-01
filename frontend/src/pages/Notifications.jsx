@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bell, Check, CheckCircle2, AlertTriangle, AlertCircle, Info, Trash } from "lucide-react";
+import { Bell, Check, CheckCircle2, AlertTriangle, AlertCircle, Info, CheckCheck } from "lucide-react";
 import AppLayout from "../layouts/AppLayout";
 import api from "../api/axios";
 
@@ -12,7 +12,7 @@ export default function Notifications() {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const res = await api.get("/fleet/notifications");
+      const res = await api.get("/notifications");
       setNotifications(res.data);
       setError(null);
     } catch (err) {
@@ -29,11 +29,19 @@ export default function Notifications() {
 
   const handleMarkAsRead = async (id) => {
     try {
-      await api.put(`/fleet/notifications/${id}/read`);
-      // Update local state directly
+      await api.put(`/notifications/${id}/read`);
       setNotifications(prev => 
         prev.map(n => n.notification_id === id ? { ...n, is_read: true } : n)
       );
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await api.put("/notifications/mark-all-read");
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     } catch (err) {
       console.error(err);
     }
@@ -52,21 +60,32 @@ export default function Notifications() {
     }
   };
 
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
   return (
     <AppLayout title="System Alerts & Feed" subtitle="Track live operational warnings, notifications, and logs">
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: "800px", margin: "0 auto" }}>
         
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#0f172a" }}>
-            Alert Logs ({notifications.filter(n => !n.is_read).length} unread)
+            Alert Logs ({unreadCount} unread)
           </h3>
-          <button 
-            onClick={fetchNotifications}
-            className="ff-btn-ghost"
-            style={{ padding: "0.5rem 1rem", fontSize: "0.8125rem" }}
-          >
-            Refresh Feed
-          </button>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            {unreadCount > 0 && (
+              <button
+                onClick={handleMarkAllRead}
+                style={{ padding: "0.5rem 1rem", fontSize: "0.8125rem", background: "#f1f5f9", border: "1.5px solid #cbd5e1", borderRadius: "0.5rem", color: "#334155", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "0.375rem" }}
+              >
+                <CheckCheck size={16} /> Mark All Read
+              </button>
+            )}
+            <button 
+              onClick={fetchNotifications}
+              style={{ padding: "0.5rem 1rem", fontSize: "0.8125rem", background: "#3b82f6", color: "white", border: "none", borderRadius: "0.5rem", fontWeight: 600, cursor: "pointer" }}
+            >
+              Refresh Feed
+            </button>
+          </div>
         </div>
 
         {loading ? (

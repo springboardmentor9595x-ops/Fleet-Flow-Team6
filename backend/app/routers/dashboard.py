@@ -1,5 +1,5 @@
 import datetime
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 from database import get_db
@@ -8,6 +8,7 @@ from app.models.driver import Driver
 from app.models.trip import Trip
 from app.models.notification import Notification
 from app.models.user import User
+from app.core.security import require_roles, get_current_user
 
 router = APIRouter(
     prefix="/dashboard",
@@ -15,7 +16,10 @@ router = APIRouter(
 )
 
 @router.get("/summary")
-def get_summary(db: Session = Depends(get_db)):
+def get_summary(
+    current_user: User = Depends(require_roles(["Admin", "FleetManager", "Dispatcher"])),
+    db: Session = Depends(get_db)
+):
     total_vehicles = db.query(Vehicle).count()
     active_trips = db.query(Trip).filter(Trip.status == "active").count()
     maintenance_due = db.query(Vehicle).filter(Vehicle.status == "Maintenance").count()
@@ -110,7 +114,10 @@ def get_summary(db: Session = Depends(get_db)):
     ]
 
 @router.get("/trips")
-def get_trips(db: Session = Depends(get_db)):
+def get_trips(
+    current_user: User = Depends(require_roles(["Admin", "FleetManager", "Dispatcher"])),
+    db: Session = Depends(get_db)
+):
     results = db.query(Trip, Vehicle, User).outerjoin(
         Vehicle, Trip.vehicle_id == Vehicle.vehicle_id
     ).outerjoin(
@@ -132,7 +139,10 @@ def get_trips(db: Session = Depends(get_db)):
     return trips
 
 @router.get("/alerts")
-def get_alerts(db: Session = Depends(get_db)):
+def get_alerts(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     notifications = db.query(Notification).order_by(Notification.created_at.desc()).limit(4).all()
     
     alerts = []

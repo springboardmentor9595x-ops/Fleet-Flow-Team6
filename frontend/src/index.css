@@ -340,3 +340,51 @@ button, input, select, textarea { font-family: inherit; }
   background: var(--ff-emerald);
   animation: ff-pulse-dot 1.5s ease-in-out infinite;
 }
+
+/* ---------- Spacious Report & Operational Tables ---------- */
+.ff-table-container {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 0.875rem;
+  border: 1.5px solid #e2e8f0;
+  background: white;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+}
+
+.ff-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+  text-align: left;
+}
+
+.ff-table th {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1rem 1.5rem;
+  border-bottom: 2px solid #cbd5e1;
+  white-space: nowrap;
+}
+
+.ff-table td {
+  padding: 1.125rem 1.5rem;
+  color: #0f172a;
+  border-bottom: 1px solid #f1f5f9;
+  white-space: nowrap;
+  font-weight: 500;
+  transition: background 0.15s ease;
+}
+
+.ff-table tbody tr:hover td {
+  background: #f8fafc;
+}
+
+.ff-table tbody tr:last-child td {
+  border-bottom: none;
+}
+

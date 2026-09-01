@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { 
   Package, MapPin, Truck, User, ArrowLeft, Navigation, 
-  Clock, AlertTriangle, Compass, CheckCircle2, RefreshCw 
+  Clock, AlertTriangle, Compass, CheckCircle2, RefreshCw, Trash2
 } from "lucide-react";
 import AppLayout from "../layouts/AppLayout";
 import api from "../api/axios";
@@ -272,13 +272,27 @@ export default function ShipmentDetail() {
   const handleRecalculateRoute = async () => {
     if (!trip) return;
     try {
-      const res = await api.post(`/fleet/trips/${trip.trip_id}/recalculate`);
-      alert(res.data.message + "\nNew ETA: " + res.data.updated_eta);
+      const res = await api.post(`/trips/${trip.trip_id}/recalculate-route`);
       setEta(res.data.updated_eta);
       setDistanceRemaining(round(res.data.new_distance, 1));
+      if (res.data.planned_route && polylineRef.current) {
+        polylineRef.current.setLatLngs(res.data.planned_route);
+      }
+      setRerouteNotice(`Route optimized dynamically. New distance: ${res.data.new_distance} km. Updated ETA: ${res.data.updated_eta}`);
     } catch (err) {
       console.error(err);
-      alert("Failed to recalculate detour.");
+      alert("Failed to optimize route.");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm("Are you sure you want to delete this shipment? This action cannot be undone.")) return;
+    try {
+      await api.delete(`/shipments/${id}`);
+      navigate("/shipments");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete shipment.");
     }
   };
 
@@ -319,8 +333,8 @@ export default function ShipmentDetail() {
     <AppLayout title="Live Telemetry Console" subtitle={`Tracking Shipment ${shipment.tracking_number}`}>
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
         
-        {/* Back navigation */}
-        <div>
+        {/* Back navigation & Actions */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <button 
             onClick={() => navigate("/shipments")}
             style={{
@@ -338,6 +352,29 @@ export default function ShipmentDetail() {
             <ArrowLeft size={16} />
             <span>Back to Shipments</span>
           </button>
+
+          {isOpsRole && (
+            <button
+              onClick={handleDelete}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                background: "#fee2e2",
+                color: "#ef4444",
+                border: "1.5px solid #fecdd3",
+                padding: "0.5rem 1rem",
+                borderRadius: "0.75rem",
+                fontWeight: 600,
+                fontSize: "0.875rem",
+                cursor: "pointer",
+                transition: "all 0.2s"
+              }}
+            >
+              <Trash2 size={16} />
+              <span>Delete Shipment</span>
+            </button>
+          )}
         </div>
 
         {/* Stepper tracker */}
@@ -353,10 +390,10 @@ export default function ShipmentDetail() {
               const isCurrent = idx === activeStep;
               return (
                 <div key={step} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
-                  <div style={{ 
-                    width: "36px", 
-                    height: "36px", 
-                    borderRadius: "50%", 
+                  <div style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "50%",
                     background: isCurrent ? "#6366f1" : isActive ? "linear-gradient(135deg, #818cf8, #60a5fa)" : "white",
                     border: isActive ? "3px solid white" : "3px solid #cbd5e1",
                     boxShadow: isActive ? "0 4px 10px rgba(99, 102, 241, 0.3)" : "none",
@@ -384,25 +421,25 @@ export default function ShipmentDetail() {
           
           {/* Left panel: Map container */}
           <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-            <div 
-              style={{ 
-                background: "white", 
-                borderRadius: "1.5rem", 
-                border: "1.5px solid rgba(15,23,42,0.06)", 
-                padding: "0.75rem", 
-                boxShadow: "0 4px 16px rgba(15,23,42,0.02)" 
+            <div
+              style={{
+                background: "white",
+                borderRadius: "1.5rem",
+                border: "1.5px solid rgba(15,23,42,0.06)",
+                padding: "0.75rem",
+                boxShadow: "0 4px 16px rgba(15,23,42,0.02)"
               }}
             >
-              <div 
-                id="tracking-map" 
-                style={{ 
-                  height: "450px", 
-                  width: "100%", 
-                  borderRadius: "1rem", 
+              <div
+                id="tracking-map"
+                style={{
+                  height: "450px",
+                  width: "100%",
+                  borderRadius: "1rem",
                   background: "#f1f5f9",
                   overflow: "hidden",
                   zIndex: 1
-                }} 
+                }}
               />
             </div>
 
@@ -479,6 +516,30 @@ export default function ShipmentDetail() {
                   </span>
                 </div>
               </div>
+
+              {isOpsRole && (
+                <button
+                  onClick={handleDelete}
+                  style={{
+                    marginTop: "0.5rem",
+                    padding: "0.625rem",
+                    borderRadius: "0.75rem",
+                    border: "1.5px solid #fee2e2",
+                    background: "#fef2f2",
+                    color: "#ef4444",
+                    fontWeight: 600,
+                    fontSize: "0.8125rem",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "0.375rem"
+                  }}
+                >
+                  <Trash2 size={14} />
+                  <span>Delete Shipment Record</span>
+                </button>
+              )}
             </div>
 
             {/* Routing controls */}
@@ -492,7 +553,7 @@ export default function ShipmentDetail() {
                     <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>Select Path Plan</label>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                       {routeOptions.map((opt) => (
-                        <div 
+                        <div
                           key={opt.id}
                           onClick={() => updateRoutePathOnMap(opt.id)}
                           style={{
@@ -529,8 +590,8 @@ export default function ShipmentDetail() {
 
                 {/* Operations dispatcher action controls */}
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.5rem" }}>
-                  {trip.status === "pending" && (
-                    <button 
+                  {(trip.status === "Scheduled" || trip.status === "pending") && (
+                    <button
                       onClick={handleStartTrip}
                       style={{
                         width: "100%",
@@ -546,8 +607,23 @@ export default function ShipmentDetail() {
                       Start Trip (In Transit)
                     </button>
                   )}
-                  {trip.status === "active" && (
+                  {(trip.status === "In Transit" || trip.status === "active") && (
                     <>
+                      <button
+                        onClick={handleRecalculateRoute}
+                        style={{
+                          width: "100%",
+                          padding: "0.625rem",
+                          borderRadius: "0.75rem",
+                          background: "#f1f5f9",
+                          color: "#334155",
+                          fontWeight: 600,
+                          border: "1.5px solid #cbd5e1",
+                          cursor: "pointer"
+                        }}
+                      >
+                        Recalculate & Optimize Route
+                      </button>
                       <button 
                         onClick={handleEndTrip}
                         style={{
@@ -561,22 +637,7 @@ export default function ShipmentDetail() {
                           cursor: "pointer"
                         }}
                       >
-                        Complete Trip (Delivered)
-                      </button>
-                      <button 
-                        onClick={handleRecalculateRoute}
-                        style={{
-                          width: "100%",
-                          padding: "0.625rem",
-                          borderRadius: "0.75rem",
-                          background: "transparent",
-                          color: "#4f46e5",
-                          border: "1.5px solid #818cf8",
-                          fontWeight: 600,
-                          cursor: "pointer"
-                        }}
-                      >
-                        Recalculate Route (Detour)
+                        Complete Delivery (End Trip)
                       </button>
                     </>
                   )}

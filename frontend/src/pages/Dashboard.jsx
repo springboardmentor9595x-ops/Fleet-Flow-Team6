@@ -1,70 +1,33 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Truck, Route, Wrench, BarChart3, Bell, TrendingUp, Clock, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Truck, Route, Wrench, Fuel, BarChart3, Bell, TrendingUp, Clock, CheckCircle2, AlertTriangle, ArrowUpRight } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { useNavigate } from "react-router-dom";
 import AppLayout from "../layouts/AppLayout";
 import api from "../api/axios";
 
-const statusStyles = {
-  active:       { color: "#059669", bg: "#ecfdf5", border: "#a7f3d0", label: "Active"      },
-  completed:    { color: "#1d4ed8", bg: "#eff6ff", border: "#bfdbfe", label: "Completed"   },
-  pending:      { color: "#92400e", bg: "#fffbeb", border: "#fde68a", label: "Pending"     },
-  "in transit": { color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe", label: "In Transit"  },
-  assigned:     { color: "#0891b2", bg: "#ecfeff", border: "#a5f3fc", label: "Assigned"    },
-};
-
-const alertStyles = {
-  warning: { icon: AlertTriangle, color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
-  info:    { icon: Bell,          color: "#1d4ed8", bg: "#eff6ff", border: "#bfdbfe" },
-  success: { icon: CheckCircle2,  color: "#059669", bg: "#ecfdf5", border: "#a7f3d0" },
-};
-
-const iconMap = {
-  Truck: Truck,
-  Route: Route,
-  Wrench: Wrench,
-  TrendingUp: TrendingUp,
-};
-
-const card   = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
-const stagger = { show: { transition: { staggerChildren: 0.08 } } };
-
 export default function Dashboard() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-
-  const [stats, setStats] = useState([]);
-  const [recentTrips, setRecentTrips] = useState(null);
-  const [alerts, setAlerts] = useState([]);
+  const { user } = useAuth();
+  const [data, setData] = useState(null);
+  const [recentTrips, setRecentTrips] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let active = true;
     async function loadData() {
       try {
-        const [statsRes, tripsRes, alertsRes] = await Promise.all([
-          api.get("/dashboard/summary"),
-          api.get("/dashboard/trips"),
-          api.get("/dashboard/alerts")
+        setLoading(true);
+        const [dashRes, tripsRes] = await Promise.all([
+          api.get("/analytics/fleet-dashboard"),
+          api.get("/dashboard/trips")
         ]);
-        if (active) {
-          setStats(statsRes.data);
-          setRecentTrips(tripsRes.data);
-          setAlerts(alertsRes.data);
-          setLoading(false);
-        }
+        setData(dashRes.data);
+        setRecentTrips(tripsRes.data || []);
       } catch (err) {
-        console.error("Failed to load dashboard statistics:", err);
-        if (active) {
-          setLoading(false);
-        }
+        console.error("Failed to load Fleet Dashboard data:", err);
+      } finally {
+        setLoading(false);
       }
     }
     loadData();
-    return () => {
-      active = false;
-    };
   }, []);
 
   const greeting = () => {
@@ -77,144 +40,179 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <AppLayout title={`${greeting()}, ${name} 👋`} subtitle="Loading live operational data...">
+      <AppLayout title={`${greeting()}, ${name} 👋`} subtitle="Loading live fleet overview...">
         <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "350px", flexDirection: "column", gap: "1rem" }}>
-          <div className="ff-pulse-dot" style={{ width: "36px", height: "36px", background: "#6366f1" }} />
-          <p style={{ fontSize: "0.875rem", color: "#64748b", fontWeight: 500 }}>Connecting to FleetFlow API...</p>
+          <div className="ff-pulse-dot" style={{ width: "36px", height: "36px", background: "#3b82f6" }} />
+          <p style={{ fontSize: "0.875rem", color: "#64748b", fontWeight: 500 }}>Fetching Fleet Analytics...</p>
         </div>
       </AppLayout>
     );
   }
 
+  const statusBk = data?.status_breakdown || { Available: 0, Assigned: 0, "In Transit": 0, Maintenance: 0 };
+  const typeBk = data?.type_breakdown || {};
+  const fuelSummary = data?.fuel_summary || { total_cost_inr: 0, total_liters: 0, top_vehicles_by_cost: [] };
+  const maintSummary = data?.maintenance_summary || { overdue_count: 0, upcoming_count: 0, upcoming_list: [] };
+
   return (
-    <AppLayout title={`${greeting()}, ${name} 👋`} subtitle="Here's your fleet at a glance today.">
-      <motion.div variants={stagger} initial="hidden" animate="show">
+    <AppLayout title={`${greeting()}, ${name} 👋`} subtitle="Fleet Operational Control Center & Utilization Overview">
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
 
-        {/* Stat cards */}
-        <motion.div variants={stagger} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
-          {stats.map(({ label, value, delta, positive, icon: iconName, color, bg, border }) => {
-            const Icon = iconMap[iconName] || Truck;
-            return (
-              <motion.div key={label} variants={card}
-                style={{ background: "white", border: `1.5px solid ${border}`, borderRadius: "1.25rem", padding: "1.25rem 1.5rem", boxShadow: "0 2px 8px rgba(15,23,42,0.06)", display: "flex", flexDirection: "column", gap: "0.75rem", transition: "box-shadow 0.2s, transform 0.2s" }}
-                whileHover={{ y: -2, boxShadow: "0 8px 24px rgba(15,23,42,0.10)" }}
-              >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <p style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: 600 }}>{label}</p>
-                  <div style={{ borderRadius: "0.625rem", background: bg, border: `1px solid ${border}`, padding: "0.5rem", display: "flex" }}>
-                    <Icon size={16} color={color} />
-                  </div>
-                </div>
-                <p style={{ fontSize: "2rem", fontWeight: 700, lineHeight: 1, color: "#0f172a" }}>{value}</p>
-                <p style={{ fontSize: "0.75rem", color: positive ? "#059669" : "#d97706", fontWeight: 500, display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                  {positive ? "▲" : "▼"} {delta}
-                </p>
-              </motion.div>
-            );
-          })}
-        </motion.div>
-
-        {/* Two-column lower */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "1.25rem", alignItems: "start" }} className="dashboard-grid">
-
-          {/* Trips table */}
-          <motion.div variants={card} style={{ background: "white", border: "1.5px solid rgba(15,23,42,0.08)", borderRadius: "1.25rem", padding: "1.5rem", boxShadow: "0 2px 8px rgba(15,23,42,0.06)" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
-              <div>
-                <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#0f172a" }}>Recent Trips</h3>
-                <p style={{ fontSize: "0.8125rem", color: "#64748b", marginTop: "0.125rem" }}>Live and completed routes</p>
-              </div>
-              <span className="ff-badge ff-badge-emerald">
-                <span className="ff-pulse-dot" style={{ width: "6px", height: "6px", background: "#059669" }} />
-                {(recentTrips || []).filter(t => t.status?.toLowerCase() === "active").length} active
-              </span>
+        {/* Top 4 KPI Cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1.25rem" }}>
+          
+          {/* Active Vehicles */}
+          <div className="ff-card" style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: 600 }}>Active Fleet Vehicles</span>
+              <Truck size={18} color="#3b82f6" />
             </div>
+            <h3 style={{ fontSize: "1.75rem", fontWeight: 700, color: "#0f172a" }}>{data?.total_vehicles || 0}</h3>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", fontSize: "0.75rem", color: "#475569" }}>
+              {Object.entries(typeBk).map(([t, cnt]) => (
+                <span key={t} style={{ background: "#f1f5f9", padding: "0.125rem 0.375rem", borderRadius: "0.375rem" }}>{t}: {cnt}</span>
+              ))}
+            </div>
+          </div>
 
+          {/* Fleet Utilization Rate */}
+          <div className="ff-card" style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: 600 }}>Fleet Utilization Rate</span>
+              <TrendingUp size={18} color="#059669" />
+            </div>
+            <h3 style={{ fontSize: "1.75rem", fontWeight: 700, color: "#059669" }}>{data?.utilization_rate_pct || 0}%</h3>
+            <span style={{ fontSize: "0.75rem", color: "#059669", fontWeight: 500 }}><ArrowUpRight size={12} style={{ display: "inline" }} /> Active vs Available</span>
+          </div>
+
+          {/* Fuel Costs */}
+          <div className="ff-card" style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: 600 }}>Monthly Fuel Spend</span>
+              <Fuel size={18} color="#6366f1" />
+            </div>
+            <h3 style={{ fontSize: "1.75rem", fontWeight: 700, color: "#0f172a" }}>₹{fuelSummary.total_cost_inr.toLocaleString()}</h3>
+            <span style={{ fontSize: "0.75rem", color: "#64748b" }}>{fuelSummary.total_liters} Liters consumed</span>
+          </div>
+
+          {/* Maintenance Alerts */}
+          <div className="ff-card" style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: 600 }}>Maintenance Status</span>
+              <Wrench size={18} color="#d97706" />
+            </div>
+            <h3 style={{ fontSize: "1.75rem", fontWeight: 700, color: maintSummary.overdue_count > 0 ? "#dc2626" : "#0f172a" }}>
+              {maintSummary.overdue_count} Overdue
+            </h3>
+            <span style={{ fontSize: "0.75rem", color: "#d97706" }}>{maintSummary.upcoming_count} upcoming in 7 days</span>
+          </div>
+
+        </div>
+
+        {/* Middle Row: Vehicle Status Overview & Fuel Consumption Summary */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }} className="dashboard-grid">
+          
+          {/* Vehicle Status Breakdown */}
+          <div className="ff-card" style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <h4 style={{ fontSize: "0.9375rem", fontWeight: 700, color: "#0f172a" }}>Vehicle Status Overview</h4>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+              <div style={{ background: "#ecfdf5", border: "1px solid #a7f3d0", padding: "1rem", borderRadius: "0.75rem" }}>
+                <span style={{ fontSize: "0.75rem", color: "#047857", fontWeight: 700 }}>Available</span>
+                <h3 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#059669" }}>{statusBk.Available}</h3>
+              </div>
+              <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", padding: "1rem", borderRadius: "0.75rem" }}>
+                <span style={{ fontSize: "0.75rem", color: "#1d4ed8", fontWeight: 700 }}>Assigned</span>
+                <h3 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#2563eb" }}>{statusBk.Assigned}</h3>
+              </div>
+              <div style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", padding: "1rem", borderRadius: "0.75rem" }}>
+                <span style={{ fontSize: "0.75rem", color: "#6d28d9", fontWeight: 700 }}>In Transit</span>
+                <h3 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#7c3aed" }}>{statusBk["In Transit"]}</h3>
+              </div>
+              <div style={{ background: "#fffbeb", border: "1px solid #fde68a", padding: "1rem", borderRadius: "0.75rem" }}>
+                <span style={{ fontSize: "0.75rem", color: "#b45309", fontWeight: 700 }}>Maintenance</span>
+                <h3 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#d97706" }}>{statusBk.Maintenance}</h3>
+              </div>
+            </div>
+          </div>
+
+          {/* Top Fuel Consumption Vehicles */}
+          <div className="ff-card" style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <h4 style={{ fontSize: "0.9375rem", fontWeight: 700, color: "#0f172a" }}>Top Fuel Consuming Vehicles</h4>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+              {fuelSummary.top_vehicles_by_cost.length > 0 ? (
+                fuelSummary.top_vehicles_by_cost.map((v, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.625rem 0.875rem", background: "#f8fafc", borderRadius: "0.625rem", border: "1px solid #e2e8f0" }}>
+                    <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "#1e293b" }}>{v.registration_number}</span>
+                    <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "#059669" }}>₹{v.total_cost_inr.toLocaleString()}</span>
+                  </div>
+                ))
+              ) : (
+                <p style={{ fontSize: "0.8125rem", color: "#94a3b8", textAlign: "center", padding: "1rem" }}>No fuel records logged yet.</p>
+              )}
+            </div>
+          </div>
+
+        </div>
+
+        {/* Bottom Row: Upcoming Maintenance List & Recent Trips */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }} className="dashboard-grid">
+          
+          {/* Upcoming Maintenance List */}
+          <div className="ff-card" style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <h4 style={{ fontSize: "0.9375rem", fontWeight: 700, color: "#0f172a" }}>Upcoming & Overdue Maintenance</h4>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+              {maintSummary.upcoming_list.length > 0 ? (
+                maintSummary.upcoming_list.map((m, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.625rem 0.875rem", background: "#fffbeb", borderRadius: "0.625rem", border: "1px solid #fde68a" }}>
+                    <div>
+                      <p style={{ fontSize: "0.875rem", fontWeight: 700, color: "#0f172a" }}>{m.vehicle_reg}</p>
+                      <p style={{ fontSize: "0.75rem", color: "#64748b" }}>{m.type} • Due {m.next_service_date}</p>
+                    </div>
+                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#b45309", background: "#fef3c7", padding: "0.25rem 0.5rem", borderRadius: "0.375rem" }}>
+                      {m.resolution_status}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p style={{ fontSize: "0.8125rem", color: "#94a3b8", textAlign: "center", padding: "1rem" }}>No upcoming maintenance tasks due.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Recent Trips */}
+          <div className="ff-card" style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <h4 style={{ fontSize: "0.9375rem", fontWeight: 700, color: "#0f172a" }}>Recent Fleet Trips</h4>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
                 <thead>
-                  <tr>
-                    {["Trip ID", "Driver", "Route", "Vehicle", "Status", "Started"].map((h) => (
-                      <th key={h} style={{ textAlign: "left", padding: "0.5rem 0.75rem", color: "#94a3b8", fontWeight: 600, fontSize: "0.75rem", letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: "1.5px solid #f1f5f9", whiteSpace: "nowrap" }}>
-                        {h}
-                      </th>
-                    ))}
+                  <tr style={{ background: "#f8fafc" }}>
+                    <th style={{ padding: "0.5rem", textAlign: "left", color: "#94a3b8" }}>Trip ID</th>
+                    <th style={{ padding: "0.5rem", textAlign: "left", color: "#94a3b8" }}>Driver</th>
+                    <th style={{ padding: "0.5rem", textAlign: "left", color: "#94a3b8" }}>Route</th>
+                    <th style={{ padding: "0.5rem", textAlign: "left", color: "#94a3b8" }}>Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {recentTrips && recentTrips.length > 0 ? (
-                    recentTrips.map((trip, i) => {
-                      const s = statusStyles[trip.status?.toLowerCase()] || statusStyles.pending;
-                      return (
-                        <motion.tr key={trip.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 + i * 0.05 }}
-                          style={{ borderBottom: "1px solid #f8fafc", cursor: "default" }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
-                          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
-                          <td style={{ padding: "0.75rem", color: "#6366f1", fontWeight: 700, whiteSpace: "nowrap" }}>{trip.id}</td>
-                          <td style={{ padding: "0.75rem", color: "#0f172a", fontWeight: 500, whiteSpace: "nowrap" }}>{trip.driver}</td>
-                          <td style={{ padding: "0.75rem", color: "#475569", whiteSpace: "nowrap" }}>{trip.route}</td>
-                          <td style={{ padding: "0.75rem", whiteSpace: "nowrap" }}>
-                            <span style={{ fontFamily: "monospace", fontSize: "0.8125rem", background: "#f1f5f9", color: "#475569", padding: "0.125rem 0.5rem", borderRadius: "0.375rem" }}>{trip.vehicle}</span>
-                          </td>
-                          <td style={{ padding: "0.75rem" }}>
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", padding: "0.25rem 0.625rem", borderRadius: "9999px", fontSize: "0.75rem", fontWeight: 600, background: s.bg, color: s.color, border: `1px solid ${s.border}` }}>
-                              {trip.status?.toLowerCase() === "active" && <span className="ff-pulse-dot" style={{ width: "5px", height: "5px", background: s.color }} />}
-                              {s.label}
-                            </span>
-                          </td>
-                          <td style={{ padding: "0.75rem", color: "#94a3b8", whiteSpace: "nowrap" }}>
-                            <Clock size={12} style={{ display: "inline", marginRight: "4px", verticalAlign: "middle" }} />
-                            {trip.started}
-                          </td>
-                        </motion.tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan="6" style={{ textAlign: "center", padding: "2rem", color: "#64748b" }}>
-                        No recent trips found.
+                  {recentTrips.slice(0, 4).map((t, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "0.5rem", fontWeight: 700, color: "#6366f1" }}>{t.id}</td>
+                      <td style={{ padding: "0.5rem", fontWeight: 600 }}>{t.driver}</td>
+                      <td style={{ padding: "0.5rem", color: "#64748b" }}>{t.route}</td>
+                      <td style={{ padding: "0.5rem" }}>
+                        <span style={{ padding: "0.125rem 0.375rem", borderRadius: "0.25rem", background: "#eff6ff", color: "#1d4ed8", fontWeight: 700, fontSize: "0.6875rem" }}>
+                          {t.status}
+                        </span>
                       </td>
                     </tr>
-                  )}
+                  ))}
                 </tbody>
               </table>
             </div>
-          </motion.div>
+          </div>
 
-          {/* Alerts panel */}
-          <motion.div variants={card} className="ff-card" style={{ padding: "1.5rem" }}>
-            <div style={{ marginBottom: "1.25rem" }}>
-              <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#0f172a" }}>Fleet Alerts</h3>
-              <p style={{ fontSize: "0.8125rem", color: "#64748b", marginTop: "0.125rem" }}>{alerts.length} notifications</p>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: "320px", overflowY: "auto" }}>
-              {alerts.map((alert, i) => {
-                const { icon: AlertIcon, color, bg, border } = alertStyles[alert.type] || alertStyles.info;
-                return (
-                  <motion.div key={i} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 + i * 0.07 }}
-                    style={{ display: "flex", gap: "0.75rem", padding: "0.875rem", borderRadius: "0.875rem", background: bg, border: `1px solid ${border}`, cursor: "default" }}>
-                    <div style={{ flexShrink: 0, width: "32px", height: "32px", borderRadius: "0.5rem", background: "white", border: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <AlertIcon size={14} color={color} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: "0.8125rem", color: "#334155", lineHeight: 1.4 }}>{alert.text}</p>
-                      <p style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.25rem" }}>{alert.time}</p>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-
-            <button
-              style={{ width: "100%", marginTop: "1rem", padding: "0.625rem", borderRadius: "0.875rem", background: "transparent", border: "1.5px solid rgba(15,23,42,0.08)", color: "#64748b", fontSize: "0.8125rem", cursor: "pointer", transition: "background 0.15s, color 0.15s, border-color 0.15s" }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "#f8fafc"; e.currentTarget.style.color = "#0f172a"; e.currentTarget.style.borderColor = "rgba(15,23,42,0.15)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#64748b"; e.currentTarget.style.borderColor = "rgba(15,23,42,0.08)"; }}>
-              View all notifications
-            </button>
-          </motion.div>
         </div>
-      </motion.div>
+
+      </div>
 
       <style>{`
         @media (max-width: 1024px) { .dashboard-grid { grid-template-columns: 1fr !important; } }

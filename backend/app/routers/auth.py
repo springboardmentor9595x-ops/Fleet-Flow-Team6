@@ -117,19 +117,30 @@ def login(
             detail="Invalid email or password."
         )
 
-    import secrets
-    otp = "".join(secrets.choice("0123456789") for _ in range(6))
-    
-    user.otp_code = otp
-    user.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
-    db.commit()
+    # If user account is not verified yet, send OTP for initial verification
+    if not user.is_verified:
+        import secrets
+        otp = "".join(secrets.choice("0123456789") for _ in range(6))
+        
+        user.otp_code = otp
+        user.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        db.commit()
 
-    background_tasks.add_task(send_otp_email, user.email, user.full_name, otp)
+        background_tasks.add_task(send_otp_email, user.email, user.full_name, otp)
 
+        return {
+            "requires_otp": True,
+            "email": user.email,
+            "message": "Account not verified. OTP has been sent to your email."
+        }
+
+    # Already existing verified account: issue token directly without OTP
+    access_token = create_access_token(data={"sub": user.email})
     return {
-        "requires_otp": True,
-        "email": user.email,
-        "message": "OTP has been sent to your email."
+        "requires_otp": False,
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user
     }
 
 

@@ -16,6 +16,10 @@ import Notifications from "./pages/Notifications";
 import Settings from "./pages/Settings";
 import Shipments from "./pages/Shipments";
 import ShipmentDetail from "./pages/ShipmentDetail";
+import DriverDashboard from "./pages/DriverDashboard";
+import FuelRecords from "./pages/FuelRecords";
+import LogisticsDashboard from "./pages/LogisticsDashboard";
+import AdminDashboard from "./pages/AdminDashboard";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -23,26 +27,74 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/verify" element={<VerifyEmail />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
 
+        {/* Fleet Dashboard (Admin, FleetManager) */}
         <Route path="/dashboard" element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={["Admin", "FleetManager"]}>
+            <Dashboard />
+          </ProtectedRoute>
+        }/>
+        <Route path="/fleet-dashboard" element={
+          <ProtectedRoute allowedRoles={["Admin", "FleetManager"]}>
+            <Dashboard />
+          </ProtectedRoute>
+        }/>
+        <Route path="/fleet-manager" element={
+          <ProtectedRoute allowedRoles={["Admin", "FleetManager"]}>
             <Dashboard />
           </ProtectedRoute>
         }/>
 
-        <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
+        {/* Logistics Dashboard (Admin, FleetManager, Dispatcher) */}
+        <Route path="/logistics-dashboard" element={
+          <ProtectedRoute allowedRoles={["Admin", "FleetManager", "Dispatcher"]}>
+            <LogisticsDashboard />
+          </ProtectedRoute>
+        }/>
+        <Route path="/dispatcher" element={
+          <ProtectedRoute allowedRoles={["Admin", "FleetManager", "Dispatcher"]}>
+            <LogisticsDashboard />
+          </ProtectedRoute>
+        }/>
+
+        {/* Admin Dashboard (Admin Only) */}
+        <Route path="/admin" element={
+          <ProtectedRoute allowedRoles={["Admin"]}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        }/>
+        <Route path="/admin-dashboard" element={
+          <ProtectedRoute allowedRoles={["Admin"]}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        }/>
+
+        {/* Driver Dashboard (Driver Only) */}
+        <Route path="/driver" element={
+          <ProtectedRoute allowedRoles={["Admin", "Driver"]}>
+            <DriverDashboard />
+          </ProtectedRoute>
+        }/>
+        <Route path="/driver-dashboard" element={
+          <ProtectedRoute allowedRoles={["Admin", "Driver"]}>
+            <DriverDashboard />
+          </ProtectedRoute>
+        }/>
+
+        {/* System Resource Routes */}
+        <Route path="/users" element={<ProtectedRoute allowedRoles={["Admin"]}><Users /></ProtectedRoute>} />
         <Route path="/drivers" element={<ProtectedRoute><Drivers /></ProtectedRoute>} />
         <Route path="/vehicles" element={<ProtectedRoute><Vehicles /></ProtectedRoute>} />
         <Route path="/shipments" element={<ProtectedRoute><Shipments /></ProtectedRoute>} />
         <Route path="/shipments/:id" element={<ProtectedRoute><ShipmentDetail /></ProtectedRoute>} />
         <Route path="/trips" element={<ProtectedRoute><Trips /></ProtectedRoute>} />
         <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+        <Route path="/fuel" element={<ProtectedRoute><FuelRecords /></ProtectedRoute>} />
         <Route path="/maintenance" element={<ProtectedRoute><Maintenance /></ProtectedRoute>} />
         <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />

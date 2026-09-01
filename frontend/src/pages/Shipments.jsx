@@ -9,9 +9,27 @@ import AppLayout from "../layouts/AppLayout";
 import api from "../api/axios";
 import { useAuth } from "../context/AuthContext";
 
-const INDIAN_CITIES = [
-  "Chennai", "Bangalore", "Mumbai", "Pune", "Delhi", 
-  "Jaipur", "Hyderabad", "Vijayawada", "Kolkata", "Bhubaneswar"
+// Comprehensive list of major cities & logistics hubs across all states in India for autocomplete suggestions
+const MAJOR_INDIAN_CITIES = [
+  "Agra", "Ahmedabad", "Aizawl", "Ajmer", "Akola", "Aligarh", "Allahabad (Prayagraj)",
+  "Amravati", "Amritsar", "Anantapur", "Asansol", "Aurangabad", "Bangalore (Bengaluru)",
+  "Bareilly", "Belgaum", "Berhampur", "Bhagalpur", "Bhilai", "Bhiwandi", "Bhopal",
+  "Bhubaneswar", "Bikaner", "Bokaro", "Calicut (Kozhikode)", "Chandigarh", "Chennai",
+  "Coimbatore", "Cuttack", "Dehradun", "Delhi", "Dhanbad", "Dhule", "Dibrugarh",
+  "Durgapur", "Eluru", "Erode", "Faridabad", "Firozabad", "Gandhinagar", "Gaya",
+  "Ghaziabad", "Gorakhpur", "Gulbarga", "Guntur", "Gurgaon (Gurugram)", "Guwahati",
+  "Gwalior", "Haridwar", "Hubballi-Dharwad", "Hyderabad", "Imphal", "Indore", "Itanagar",
+  "Jabalpur", "Jaipur", "Jalandhar", "Jalgaon", "Jammu", "Jamnagar", "Jamshedpur",
+  "Jhansi", "Jodhpur", "Kakinada", "Kalyan-Dombivli", "Kanpur", "Karimnagar", "Karnal",
+  "Kochi", "Kolhapur", "Kolkata", "Kota", "Kottayam", "Kurnool", "Latur", "Lucknow",
+  "Ludhiana", "Madurai", "Malegaon", "Mangalore", "Mathura", "Meerut", "Moradabad",
+  "Mumbai", "Muzaffarnagar", "Muzaffarpur", "Mysore", "Nagpur", "Nanded", "Nashik",
+  "Navi Mumbai", "Nellore", "Noida", "Panaji", "Patiala", "Patna", "Pondicherry (Puducherry)",
+  "Pune", "Raipur", "Rajahmundry", "Rajkot", "Ranchi", "Rourkela", "Salem", "Sangli",
+  "Shillong", "Shimla", "Siliguri", "Solapur", "Srinagar", "Surat", "Thane", "Thanjavur",
+  "Thiruvananthapuram", "Thrissur", "Tiruchirappalli", "Tirunelveli", "Tirupati",
+  "Udaipur", "Ujjain", "Vadodara", "Varanasi", "Vasai-Virar", "Vellore", "Vijayawada",
+  "Visakhapatnam", "Warangal"
 ];
 
 export default function Shipments() {
@@ -47,9 +65,9 @@ export default function Shipments() {
         api.get("/fleet/drivers"),
         api.get("/fleet/vehicles")
       ]);
-      setShipments(shipmentsRes.data);
-      setDrivers(driversRes.data.filter(d => d.status === "Active"));
-      setVehicles(vehiclesRes.data.filter(v => v.status === "Available" || v.status === "Assigned"));
+      setShipments(Array.isArray(shipmentsRes.data) ? shipmentsRes.data : []);
+      setDrivers(Array.isArray(driversRes.data) ? driversRes.data : []);
+      setVehicles(Array.isArray(vehiclesRes.data) ? vehiclesRes.data : []);
       setError(null);
     } catch (err) {
       console.error("Failed to load shipment data", err);
@@ -69,14 +87,14 @@ export default function Shipments() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (formData.source === formData.destination) {
-      alert("Source and Destination cannot be the same city.");
+    if (formData.source.trim().toLowerCase() === formData.destination.trim().toLowerCase()) {
+      alert("Source and Destination cannot be the same city or location.");
       return;
     }
     try {
       const payload = {
-        source: formData.source,
-        destination: formData.destination,
+        source: formData.source.trim(),
+        destination: formData.destination.trim(),
         customer_name: formData.customer_name,
         shipment_weight: parseFloat(formData.shipment_weight),
         vehicle_id: formData.vehicle_id || null,
@@ -147,7 +165,7 @@ export default function Shipments() {
   }
 
   return (
-    <AppLayout title="Shipment Registry & Tracking" subtitle="Manage customer shipments, track real-time deliveries, and view logistics alerts">
+    <AppLayout title="Shipment Registry & Tracking" subtitle="Manage customer shipments, track real-time deliveries, and view logistics alerts across India">
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
         
         {/* Delayed shipments warning banner */}
@@ -182,7 +200,7 @@ export default function Shipments() {
             <Search size={16} color="#94a3b8" style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)" }} />
             <input 
               type="text" 
-              placeholder="Search by tracking #, source, customer..." 
+              placeholder="Search by tracking #, source, destination, customer..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
@@ -415,17 +433,20 @@ export default function Shipments() {
                 <div>
                   <h3 style={{ fontSize: "1.25rem", fontWeight: 800, color: "#0f172a" }}>Register New Shipment</h3>
                   <p style={{ fontSize: "0.8125rem", color: "#64748b", marginTop: "0.25rem" }}>
-                    Configure dispatch parameters, weight, and assign available vehicles and active drivers.
+                    Select or type any source and destination in India.
                   </p>
                 </div>
 
                 <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-                      <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>Source City</label>
-                      <select
+                      <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>Source City / Location</label>
+                      <input
+                        type="text"
                         name="source"
+                        list="india-cities-source"
                         required
+                        placeholder="e.g. Mumbai, Surat, any city..."
                         value={formData.source}
                         onChange={handleChange}
                         style={{
@@ -435,17 +456,20 @@ export default function Shipments() {
                           fontSize: "0.875rem",
                           background: "white"
                         }}
-                      >
-                        <option value="">Select city</option>
-                        {INDIAN_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
+                      />
+                      <datalist id="india-cities-source">
+                        {MAJOR_INDIAN_CITIES.map(c => <option key={c} value={c} />)}
+                      </datalist>
                     </div>
 
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-                      <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>Destination</label>
-                      <select
+                      <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>Destination City / Location</label>
+                      <input
+                        type="text"
                         name="destination"
+                        list="india-cities-dest"
                         required
+                        placeholder="e.g. Delhi, Jaipur, any city..."
                         value={formData.destination}
                         onChange={handleChange}
                         style={{
@@ -455,10 +479,10 @@ export default function Shipments() {
                           fontSize: "0.875rem",
                           background: "white"
                         }}
-                      >
-                        <option value="">Select city</option>
-                        {INDIAN_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
+                      />
+                      <datalist id="india-cities-dest">
+                        {MAJOR_INDIAN_CITIES.map(c => <option key={c} value={c} />)}
+                      </datalist>
                     </div>
                   </div>
 

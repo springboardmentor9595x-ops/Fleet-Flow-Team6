@@ -2,12 +2,10 @@ import { motion } from "framer-motion";
 import {
   BarChart3, Bell, ChevronLeft, ChevronRight, Fuel,
   LayoutDashboard, LogOut, Package2, Route, Settings,
-  ShieldCheck, Truck, UserCircle2, Users, Wrench,
+  ShieldCheck, Truck, UserCircle2, Users, Wrench, Navigation, Gauge
 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-
-const linkBase = "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all";
 
 export default function Sidebar({ collapsed, onToggle }) {
   const { user, logout } = useAuth();
@@ -16,44 +14,51 @@ export default function Sidebar({ collapsed, onToggle }) {
 
   const items = {
     Admin: [
-      { label: "Overview",      to: "/admin",         icon: LayoutDashboard },
-      { label: "Shipments",     to: "/shipments",     icon: Package2        },
-      { label: "Users",         to: "/users",         icon: Users           },
-      { label: "Drivers",       to: "/drivers",       icon: UserCircle2     },
-      { label: "Vehicles",      to: "/vehicles",      icon: Truck           },
-      { label: "Trips",         to: "/trips",         icon: Route           },
-      { label: "Reports",       to: "/reports",       icon: BarChart3       },
-      { label: "Maintenance",   to: "/maintenance",   icon: Wrench          },
-      { label: "Notifications", to: "/notifications", icon: Bell            },
-      { label: "Settings",      to: "/settings",      icon: Settings        },
+      { label: "Admin Command",    to: "/admin",               icon: ShieldCheck      },
+      { label: "Fleet Dashboard",  to: "/fleet-dashboard",     icon: Gauge            },
+      { label: "Logistics Dashboard", to: "/logistics-dashboard", icon: Navigation   },
+      { label: "Shipments",        to: "/shipments",           icon: Package2         },
+      { label: "Users",            to: "/users",               icon: Users            },
+      { label: "Drivers",          to: "/drivers",             icon: UserCircle2      },
+      { label: "Vehicles",         to: "/vehicles",            icon: Truck            },
+      { label: "Trips",            to: "/trips",               icon: Route            },
+      { label: "Reports",          to: "/reports",             icon: BarChart3        },
+      { label: "Maintenance",      to: "/maintenance",         icon: Wrench           },
+      { label: "Fuel Logs",        to: "/fuel",                icon: Fuel             },
+      { label: "Notifications",    to: "/notifications",       icon: Bell             },
+      { label: "Settings",         to: "/settings",            icon: Settings         },
     ],
     FleetManager: [
-      { label: "Overview",      to: "/fleet-manager", icon: LayoutDashboard },
-      { label: "Shipments",     to: "/shipments",     icon: Package2        },
-      { label: "Vehicles",      to: "/vehicles",      icon: Truck           },
-      { label: "Drivers",       to: "/drivers",       icon: UserCircle2     },
-      { label: "Trips",         to: "/trips",         icon: Route           },
-      { label: "Maintenance",   to: "/maintenance",   icon: Wrench          },
-      { label: "Fuel",          to: "/reports",       icon: Fuel            },
-      { label: "Notifications", to: "/notifications", icon: Bell            },
-      { label: "Settings",      to: "/settings",      icon: Settings        },
-    ],
-    Driver: [
-      { label: "Overview",      to: "/driver",        icon: LayoutDashboard },
-      { label: "Shipments",     to: "/shipments",     icon: Package2        },
-      { label: "Trips",         to: "/trips",         icon: Route           },
-      { label: "Vehicle",       to: "/vehicles",      icon: Truck           },
-      { label: "History",       to: "/reports",       icon: BarChart3       },
-      { label: "Profile",       to: "/profile",       icon: UserCircle2     },
-      { label: "Notifications", to: "/notifications", icon: Bell            },
+      { label: "Fleet Dashboard",  to: "/fleet-dashboard",     icon: Gauge            },
+      { label: "Logistics Dashboard", to: "/logistics-dashboard", icon: Navigation   },
+      { label: "Shipments",        to: "/shipments",           icon: Package2         },
+      { label: "Vehicles",         to: "/vehicles",            icon: Truck            },
+      { label: "Drivers",          to: "/drivers",             icon: UserCircle2      },
+      { label: "Trips",            to: "/trips",               icon: Route            },
+      { label: "Maintenance",      to: "/maintenance",         icon: Wrench           },
+      { label: "Fuel Logs",        to: "/fuel",                icon: Fuel             },
+      { label: "Notifications",    to: "/notifications",       icon: Bell             },
+      { label: "Settings",         to: "/settings",            icon: Settings         },
     ],
     Dispatcher: [
-      { label: "Overview",      to: "/dispatcher",    icon: LayoutDashboard },
-      { label: "Shipments",     to: "/shipments",     icon: Package2        },
-      { label: "Assign Trips",  to: "/trips",         icon: Route           },
-      { label: "Live Tracking", to: "/reports",       icon: BarChart3       },
-      { label: "Requests",      to: "/notifications", icon: Bell            },
-      { label: "Settings",      to: "/settings",      icon: Settings        },
+      { label: "Logistics Dashboard", to: "/logistics-dashboard", icon: Navigation   },
+      { label: "Shipments",        to: "/shipments",           icon: Package2         },
+      { label: "Trips & Dispatch", to: "/trips",               icon: Route            },
+      { label: "Reports",          to: "/reports",             icon: BarChart3        },
+      { label: "Maintenance",      to: "/maintenance",         icon: Wrench           },
+      { label: "Fuel Logs",        to: "/fuel",                icon: Fuel             },
+      { label: "Notifications",    to: "/notifications",       icon: Bell             },
+      { label: "Settings",         to: "/settings",            icon: Settings         },
+    ],
+    Driver: [
+      { label: "Driver Portal",    to: "/driver-dashboard",    icon: LayoutDashboard  },
+      { label: "Shipments",        to: "/shipments",           icon: Package2         },
+      { label: "Trips",            to: "/trips",               icon: Route            },
+      { label: "Vehicle",          to: "/vehicles",            icon: Truck            },
+      { label: "History",          to: "/reports",             icon: BarChart3        },
+      { label: "Maintenance",      to: "/maintenance",         icon: Wrench           },
+      { label: "Fuel Logs",        to: "/fuel",                icon: Fuel             },
+      { label: "Notifications",    to: "/notifications",       icon: Bell             },
     ],
   };
 

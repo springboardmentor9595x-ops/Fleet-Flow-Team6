@@ -73,13 +73,13 @@ export default function Vehicles() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this vehicle?")) return;
+    if (!window.confirm("Are you sure you want to delete this vehicle? This action cannot be undone.")) return;
     try {
       await api.delete(`/fleet/vehicles/${id}`);
       fetchData();
     } catch (err) {
       console.error(err);
-      alert("Failed to delete vehicle.");
+      alert(err.response?.data?.detail || "Failed to delete vehicle.");
     }
   };
 

@@ -47,9 +47,9 @@ export default function Trips() {
         api.get("/shipments")
       ]);
       setTrips(tripsRes.data);
-      setDrivers(driversRes.data.filter(d => d.status === "Active"));
-      setVehicles(vehiclesRes.data.filter(v => v.status === "Available" || v.status === "Assigned"));
-      setShipments(shipmentsRes.data.filter(s => s.status?.toLowerCase() === "created"));
+      setDrivers(Array.isArray(driversRes.data) ? driversRes.data : []);
+      setVehicles(Array.isArray(vehiclesRes.data) ? vehiclesRes.data : []);
+      setShipments(Array.isArray(shipmentsRes.data) ? shipmentsRes.data : []);
       setError(null);
     } catch (err) {
       console.error(err);
@@ -574,23 +574,56 @@ export default function Trips() {
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                       <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>Select Optimized Path</label>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
-                        {routeOptions.map((opt) => (
-                          <div 
-                            key={opt.id}
-                            onClick={() => handleRouteSelect(opt.id)}
-                            style={{
-                              border: selectedRoute === opt.id ? "1.5px solid #6366f1" : "1.5px solid rgba(15,23,42,0.06)",
-                              background: selectedRoute === opt.id ? "#f5f3ff" : "white",
-                              borderRadius: "0.875rem",
-                              padding: "0.625rem",
-                              cursor: "pointer",
-                              transition: "all 0.15s"
-                            }}
-                          >
-                            <p style={{ fontSize: "0.75rem", fontWeight: 700, color: "#1e293b" }}>{opt.id.charAt(0).toUpperCase() + opt.id.slice(1)}</p>
-                            <p style={{ fontSize: "0.6875rem", color: "#64748b", marginTop: "0.125rem" }}>{opt.distance} km • {Math.round(opt.duration_mins/60)} hrs</p>
-                          </div>
-                        ))}
+                        {routeOptions.map((opt) => {
+                          const isSelected = selectedRoute === opt.id;
+                          let trafficBg = "#ecfdf5";
+                          let trafficColor = "#047857";
+                          if (opt.traffic_level === "Heavy") {
+                            trafficBg = "#fef2f2";
+                            trafficColor = "#b91c1c";
+                          } else if (opt.traffic_level === "Moderate") {
+                            trafficBg = "#fffbebfb";
+                            trafficColor = "#b45309";
+                          }
+
+                          return (
+                            <div 
+                              key={opt.id}
+                              onClick={() => handleRouteSelect(opt.id)}
+                              style={{
+                                border: isSelected ? "2px solid #6366f1" : "1.5px solid rgba(15,23,42,0.08)",
+                                background: isSelected ? "#f5f3ff" : "white",
+                                borderRadius: "0.875rem",
+                                padding: "0.75rem",
+                                cursor: "pointer",
+                                transition: "all 0.15s ease",
+                                boxShadow: isSelected ? "0 4px 12px rgba(99,102,241,0.12)" : "none"
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                <p style={{ fontSize: "0.8125rem", fontWeight: 700, color: isSelected ? "#4338ca" : "#1e293b" }}>
+                                  {opt.name || (opt.id.charAt(0).toUpperCase() + opt.id.slice(1))}
+                                </p>
+                                {opt.fuel_saving_pct > 0 && (
+                                  <span style={{ fontSize: "0.625rem", fontWeight: 700, background: "#dcfce7", color: "#15803d", padding: "0.125rem 0.375rem", borderRadius: "0.375rem" }}>
+                                    +{opt.fuel_saving_pct}% Eco
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.375rem" }}>
+                                <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 600 }}>
+                                  {opt.distance} km • {Math.floor(opt.duration_mins / 60)}h {opt.duration_mins % 60}m
+                                </span>
+                                <span style={{ fontSize: "0.625rem", fontWeight: 600, background: trafficBg, color: trafficColor, padding: "0.125rem 0.375rem", borderRadius: "0.375rem" }}>
+                                  {opt.traffic_level}
+                                </span>
+                              </div>
+                              <p style={{ fontSize: "0.6875rem", color: "#4f46e5", fontWeight: 600, marginTop: "0.25rem" }}>
+                                ETA: {opt.eta}
+                              </p>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

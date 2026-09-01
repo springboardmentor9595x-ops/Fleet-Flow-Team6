@@ -230,7 +230,7 @@ def update_shipment(
 
 
 # ---------------------------------------------------------
-# Delete / Cancel Shipment
+# Delete Shipment
 # ---------------------------------------------------------
 @router.delete("/{shipment_id}", status_code=status.HTTP_200_OK)
 def delete_shipment(
@@ -248,9 +248,20 @@ def delete_shipment(
         if v:
             v.status = "Available"
 
+    # Free associated driver if assigned
+    if shipment.driver_id:
+        d = db.query(Driver).filter(Driver.driver_id == shipment.driver_id).first()
+        if d:
+            d.status = "Available"
+
+    # Delete associated trips
+    trips = db.query(Trip).filter(Trip.shipment_id == shipment_id).all()
+    for trip in trips:
+        db.delete(trip)
+
     db.delete(shipment)
     db.commit()
-    return {"message": "Shipment deleted successfully"}
+    return {"message": "Shipment deleted successfully", "shipment_id": str(shipment_id)}
 
 
 # ---------------------------------------------------------
@@ -298,6 +309,22 @@ def update_shipment_status(
             trip.end_time = datetime.now(timezone.utc)
         elif new_status == "In Transit":
             trip.status = "active"
+
+    # Trigger Notifications
+    from app.services.notification_service import notify_roles, notify_user
+    if new_status == "Delivered":
+        notify_roles(db, ["Admin", "FleetManager", "Dispatcher"], "Shipment Delivered", f"Shipment {shipment.tracking_number} (Customer: {shipment.customer_name}) has reached destination.", "success")
+        if shipment.driver_id:
+            d = db.query(Driver).filter(Driver.driver_id == shipment.driver_id).first()
+            if d and d.user_id:
+                notify_user(db, d.user_id, "Shipment Completed", f"Your assigned shipment {shipment.tracking_number} is marked Delivered.", "success")
+    elif new_status in ["Delayed", "Cancelled"]:
+        notif_kind = "warning" if new_status == "Delayed" else "error"
+        notify_roles(db, ["Admin", "FleetManager", "Dispatcher"], f"Shipment Alert: {new_status}", f"Shipment {shipment.tracking_number} status changed to {new_status}.", notif_kind)
+        if shipment.driver_id:
+            d = db.query(Driver).filter(Driver.driver_id == shipment.driver_id).first()
+            if d and d.user_id:
+                notify_user(db, d.user_id, f"Shipment {new_status}", f"Your assigned shipment {shipment.tracking_number} is now {new_status}.", notif_kind)
 
     db.commit()
     db.refresh(shipment)

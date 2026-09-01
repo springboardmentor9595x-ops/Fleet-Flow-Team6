@@ -1,217 +1,569 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { BarChart3, TrendingUp, DollarSign, Route, FileText, Download, Calendar, ArrowUpRight } from "lucide-react";
+import { BarChart3, TrendingUp, DollarSign, Route, FileText, Download, Calendar, FileSpreadsheet, Lock, Filter } from "lucide-react";
 import AppLayout from "../layouts/AppLayout";
+import { useAuth } from "../context/AuthContext";
 import api from "../api/axios";
 
 export default function Reports() {
-  const [stats, setStats] = useState({
-    totalDistance: 0,
-    avgTripDistance: 0,
-    activeRoutes: 0,
-    maintenanceOverdue: 0,
-    fuelExpenses: 0,
-    tripsCount: 0,
-    onTimeRate: "0%"
-  });
-  const [loading, setLoading] = useState(true);
-  const [tripStats, setTripStats] = useState([]);
-  const [fuelEfficiency, setFuelEfficiency] = useState([]);
-  
-  useEffect(() => {
-    // Quick load simulation, or fetch dashboard summary to update
-    const loadReportData = async () => {
-      try {
-        const summary = await api.get("/dashboard/summary");
-        const trips = await api.get("/dashboard/trips");
-        
-        // This is a placeholder for a real reports endpoint.
-        // For now, we'll derive some stats from existing endpoints.
-        const reportData = await api.get("/reports/operational-summary").catch(() => ({ data: {} }));
-        
-        const summaryData = {};
-        summary.data.forEach(item => {
-          const key = item.label.toLowerCase().replace(/ /g, '');
-          summaryData[key] = item.value;
-        });
+  const { user } = useAuth();
+  const roleUpper = user?.role?.toUpperCase() || "";
 
-        setStats(prev => ({
-          ...prev,
-          totalDistance: reportData.data.total_distance || 0,
-          avgTripDistance: reportData.data.avg_trip_distance || 0,
-          fuelExpenses: reportData.data.fuel_expenses || 0,
-          activeRoutes: parseInt(summaryData['activetrips']) || 0,
-          maintenanceOverdue: parseInt(summaryData['maintenancedue']) || 0,
-          onTimeRate: summaryData['on-timerate'] || "0%",
-          tripsCount: trips.data.length || 0
-        }));
-        setTripStats(reportData.data.trip_stats || []);
-        setFuelEfficiency(reportData.data.fuel_efficiency || []);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
+  // Available tabs based on role
+  const allTabs = [
+    { id: "fleet-utilization", label: "Fleet Utilization", roles: ["ADMIN", "FLEETMANAGER"] },
+    { id: "fuel-consumption", label: "Fuel Consumption", roles: ["ADMIN", "FLEETMANAGER"] },
+    { id: "driver-performance", label: "Driver Performance", roles: ["ADMIN", "FLEETMANAGER", "DRIVER"] },
+    { id: "delivery-performance", label: "Delivery Performance", roles: ["ADMIN", "FLEETMANAGER", "DISPATCHER"] },
+    { id: "maintenance", label: "Maintenance Report", roles: ["ADMIN", "FLEETMANAGER"] }
+  ];
+
+  const visibleTabs = allTabs.filter(t => t.roles.includes(roleUpper));
+  const initialTab = visibleTabs[0]?.id || "delivery-performance";
+
+  const [activeTab, setActiveTab] = useState(initialTab);
+  
+  // Category selection mode: "week", "monthly", "custom"
+  const [filterMode, setFilterMode] = useState("week");
+  const [weekSubOption, setWeekSubOption] = useState("current"); // "current", "previous"
+  
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth().toString()); // 0-11
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear().toString());
+
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate]     = useState("");
+
+  const [reportData, setReportData] = useState(null);
+  const [loading, setLoading]     = useState(true);
+
+  const monthsList = [
+    { value: "0", label: "January" },
+    { value: "1", label: "February" },
+    { value: "2", label: "March" },
+    { value: "3", label: "April" },
+    { value: "4", label: "May" },
+    { value: "5", label: "June" },
+    { value: "6", label: "July" },
+    { value: "7", label: "August" },
+    { value: "8", label: "September" },
+    { value: "9", label: "October" },
+    { value: "10", label: "November" },
+    { value: "11", label: "December" }
+  ];
+
+  const yearsList = ["2024", "2025", "2026", "2027"];
+
+  // Helper date formatter
+  const formatDateStr = (dateObj) => {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  // Recalculate start_date and end_date based on selected mode
+  const calculateDates = (mode, weekOpt, monthVal, yearVal) => {
+    const today = new Date();
+    
+    if (mode === "week") {
+      const currentDay = today.getDay(); // 0 is Sunday, 1 is Monday
+      const distanceToMonday = currentDay === 0 ? 6 : currentDay - 1;
+      
+      const mondayCurrentWeek = new Date(today);
+      mondayCurrentWeek.setDate(today.getDate() - distanceToMonday);
+
+      if (weekOpt === "previous") {
+        const mondayPrevWeek = new Date(mondayCurrentWeek);
+        mondayPrevWeek.setDate(mondayCurrentWeek.getDate() - 7);
+
+        const sundayPrevWeek = new Date(mondayPrevWeek);
+        sundayPrevWeek.setDate(mondayPrevWeek.getDate() + 6);
+
+        return {
+          start: formatDateStr(mondayPrevWeek),
+          end: formatDateStr(sundayPrevWeek)
+        };
+      } else {
+        const sundayCurrentWeek = new Date(mondayCurrentWeek);
+        sundayCurrentWeek.setDate(mondayCurrentWeek.getDate() + 6);
+
+        return {
+          start: formatDateStr(mondayCurrentWeek),
+          end: formatDateStr(sundayCurrentWeek)
+        };
       }
-    };
-    loadReportData();
-  }, []);
+    } else if (mode === "monthly") {
+      const y = parseInt(yearVal, 10);
+      const m = parseInt(monthVal, 10);
+      const firstDay = new Date(y, m, 1);
+      const lastDay = new Date(y, m + 1, 0);
+
+      return {
+        start: formatDateStr(firstDay),
+        end: formatDateStr(lastDay)
+      };
+    }
+    
+    return { start: startDate, end: endDate };
+  };
+
+  const fetchReportData = async (overrideStart, overrideEnd) => {
+    try {
+      setLoading(true);
+      const sDate = overrideStart !== undefined ? overrideStart : startDate;
+      const eDate = overrideEnd !== undefined ? overrideEnd : endDate;
+
+      const params = {};
+      if (sDate) params.start_date = sDate;
+      if (eDate) params.end_date = eDate;
+
+      const res = await api.get(`/reports/${activeTab}`, { params });
+      setReportData(res.data);
+    } catch (err) {
+      console.error("Report fetch error:", err);
+      setReportData(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Sync date calculation when mode or filters change
+  useEffect(() => {
+    if (filterMode === "week") {
+      const { start, end } = calculateDates("week", weekSubOption, selectedMonth, selectedYear);
+      setStartDate(start);
+      setEndDate(end);
+      fetchReportData(start, end);
+    } else if (filterMode === "monthly") {
+      const { start, end } = calculateDates("monthly", weekSubOption, selectedMonth, selectedYear);
+      setStartDate(start);
+      setEndDate(end);
+      fetchReportData(start, end);
+    } else {
+      fetchReportData();
+    }
+  }, [activeTab, filterMode, weekSubOption, selectedMonth, selectedYear]);
+
+  const handleApplyFilter = () => {
+    fetchReportData();
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      const params = {};
+      if (startDate) params.start_date = startDate;
+      if (endDate) params.end_date = endDate;
+
+      const response = await api.get(`/reports/${activeTab}/export/pdf`, {
+        params,
+        responseType: "blob"
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `${activeTab}_${startDate || 'all'}_to_${endDate || 'all'}_report.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      console.error("PDF export error:", err);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    try {
+      const params = {};
+      if (startDate) params.start_date = startDate;
+      if (endDate) params.end_date = endDate;
+
+      const response = await api.get(`/reports/${activeTab}/export/excel`, {
+        params,
+        responseType: "blob"
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `${activeTab}_${startDate || 'all'}_to_${endDate || 'all'}_report.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      console.error("Excel export error:", err);
+    }
+  };
 
   return (
-    <AppLayout title="Operational Analytics" subtitle="Analyze fleet performance, fuel utilization, and service metrics">
+    <AppLayout title="Reports & Export Hub" subtitle="Generate, filter by specific period category, preview, and download reports in PDF and Excel formats.">
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
         
-        {/* Top bar controls */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "white", padding: "0.5rem 1rem", borderRadius: "0.75rem", border: "1.5px solid rgba(15,23,42,0.08)", fontSize: "0.875rem", color: "#475569", cursor: "pointer" }}>
-            <Calendar size={15} />
-            <span>Last 30 Days (July 2026)</span>
-          </div>
-          <button className="ff-btn-ghost" onClick={() => window.print()} style={{ gap: "0.5rem" }}>
-            <Download size={15} />
-            Export PDF Report
-          </button>
+        {/* Role-gated Tabs */}
+        <div style={{ display: "flex", gap: "0.5rem", borderBottom: "2px solid #e2e8f0", paddingBottom: "0.5rem", overflowX: "auto" }}>
+          {visibleTabs.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              style={{
+                padding: "0.625rem 1.25rem",
+                borderRadius: "0.75rem",
+                border: "none",
+                background: activeTab === t.id ? "#3b82f6" : "transparent",
+                color: activeTab === t.id ? "white" : "#64748b",
+                fontWeight: 600,
+                fontSize: "0.875rem",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                whiteSpace: "nowrap"
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
+        {/* Enhanced Report Filter Category Console */}
+        <div className="ff-card" style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+          
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
+            
+            {/* Filter Category Selector Tabs */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <Filter size={16} color="#6366f1" />
+              <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#0f172a", textTransform: "uppercase" }}>Filter Category:</span>
+              <div style={{ display: "flex", gap: "0.375rem", background: "#f8fafc", padding: "0.25rem", borderRadius: "0.625rem", border: "1px solid #e2e8f0" }}>
+                
+                <button
+                  type="button"
+                  onClick={() => setFilterMode("week")}
+                  style={{
+                    padding: "0.375rem 0.875rem",
+                    borderRadius: "0.5rem",
+                    border: "none",
+                    background: filterMode === "week" ? "#ffffff" : "transparent",
+                    color: filterMode === "week" ? "#2563eb" : "#64748b",
+                    fontWeight: 700,
+                    fontSize: "0.8125rem",
+                    cursor: "pointer",
+                    boxShadow: filterMode === "week" ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
+                  }}
+                >
+                  📅 Weekly
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFilterMode("monthly")}
+                  style={{
+                    padding: "0.375rem 0.875rem",
+                    borderRadius: "0.5rem",
+                    border: "none",
+                    background: filterMode === "monthly" ? "#ffffff" : "transparent",
+                    color: filterMode === "monthly" ? "#2563eb" : "#64748b",
+                    fontWeight: 700,
+                    fontSize: "0.8125rem",
+                    cursor: "pointer",
+                    boxShadow: filterMode === "monthly" ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
+                  }}
+                >
+                  🗓️ Monthly Dropdown
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFilterMode("custom")}
+                  style={{
+                    padding: "0.375rem 0.875rem",
+                    borderRadius: "0.5rem",
+                    border: "none",
+                    background: filterMode === "custom" ? "#ffffff" : "transparent",
+                    color: filterMode === "custom" ? "#2563eb" : "#64748b",
+                    fontWeight: 700,
+                    fontSize: "0.8125rem",
+                    cursor: "pointer",
+                    boxShadow: filterMode === "custom" ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
+                  }}
+                >
+                  ⚙️ Custom Range
+                </button>
+
+              </div>
+            </div>
+
+            {/* Export Action Buttons */}
+            <div style={{ display: "flex", gap: "0.625rem" }}>
+              <button onClick={handleExportPDF} style={{ display: "flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem", background: "#e11d48", color: "white", border: "none", borderRadius: "0.625rem", fontWeight: 700, fontSize: "0.8125rem", cursor: "pointer" }}>
+                <FileText size={15} /> Export PDF
+              </button>
+              <button onClick={handleExportExcel} style={{ display: "flex", alignItems: "center", gap: "0.375rem", padding: "0.5rem 1rem", background: "#059669", color: "white", border: "none", borderRadius: "0.625rem", fontWeight: 700, fontSize: "0.8125rem", cursor: "pointer" }}>
+                <FileSpreadsheet size={15} /> Export Excel
+              </button>
+            </div>
+
+          </div>
+
+          {/* Dynamic Controls per Selected Category */}
+          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "0.75rem", padding: "1rem", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+            
+            {/* Mode 1: Week Selector */}
+            {filterMode === "week" && (
+              <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#475569" }}>Select Week Period:</span>
+                <select
+                  value={weekSubOption}
+                  onChange={(e) => setWeekSubOption(e.target.value)}
+                  style={{ padding: "0.4375rem 0.875rem", borderRadius: "0.5rem", border: "1.5px solid #cbd5e1", fontSize: "0.8125rem", fontWeight: 600, background: "white" }}
+                >
+                  <option value="current">Current Week (Mon - Sun)</option>
+                  <option value="previous">Previous Week (Last Mon - Sun)</option>
+                </select>
+              </div>
+            )}
+
+            {/* Mode 2: Monthly Dropdown Selector */}
+            {filterMode === "monthly" && (
+              <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#475569" }}>Select Month & Year:</span>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    style={{ padding: "0.4375rem 0.875rem", borderRadius: "0.5rem", border: "1.5px solid #cbd5e1", fontSize: "0.8125rem", fontWeight: 600, background: "white" }}
+                  >
+                    {monthsList.map(m => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(e.target.value)}
+                    style={{ padding: "0.4375rem 0.875rem", borderRadius: "0.5rem", border: "1.5px solid #cbd5e1", fontSize: "0.8125rem", fontWeight: 600, background: "white" }}
+                  >
+                    {yearsList.map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* Mode 3: Custom Date Range Pickers */}
+            {filterMode === "custom" && (
+              <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#475569" }}>Start Date:</span>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    style={{ padding: "0.4375rem 0.625rem", borderRadius: "0.5rem", border: "1.5px solid #cbd5e1", fontSize: "0.8125rem", background: "white" }}
+                  />
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#475569" }}>End Date:</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    style={{ padding: "0.4375rem 0.625rem", borderRadius: "0.5rem", border: "1.5px solid #cbd5e1", fontSize: "0.8125rem", background: "white" }}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleApplyFilter}
+                  style={{ padding: "0.4375rem 0.875rem", background: "#2563eb", color: "white", border: "none", borderRadius: "0.5rem", fontSize: "0.8125rem", fontWeight: 700, cursor: "pointer" }}
+                >
+                  Apply Custom Range
+                </button>
+              </div>
+            )}
+
+            {/* Active Period Display Banner */}
+            <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#6366f1", background: "#eff6ff", padding: "0.375rem 0.75rem", borderRadius: "0.5rem", border: "1px solid #bfdbfe" }}>
+              Active Period: {startDate || "Start"} → {endDate || "End"}
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* Report Preview */}
         {loading ? (
           <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "250px", flexDirection: "column", gap: "1rem" }}>
-            <div className="ff-pulse-dot" style={{ width: "36px", height: "36px", background: "#8b5cf6" }} />
-            <p style={{ fontSize: "0.875rem", color: "#64748b" }}>Analyzing operations data...</p>
+            <div className="ff-pulse-dot" style={{ width: "36px", height: "36px", background: "#3b82f6" }} />
+            <p style={{ fontSize: "0.875rem", color: "#64748b" }}>Generating report preview for {startDate} to {endDate}...</p>
+          </div>
+        ) : !reportData ? (
+          <div style={{ textAlign: "center", padding: "3rem", background: "white", borderRadius: "1rem", border: "1.5px solid #e2e8f0" }}>
+            <Lock size={36} color="#94a3b8" />
+            <p style={{ fontSize: "0.875rem", color: "#64748b", marginTop: "0.5rem" }}>Failed or unauthorized to view this report.</p>
           </div>
         ) : (
-          <>
-            {/* KPI Cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1.25rem" }}>
-              
-              <div className="ff-stat-card" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: 600 }}>Total Fleet Mileage</span>
-                  <Route size={16} color="#6366f1" />
-                </div>
-                <h3 style={{ fontSize: "1.75rem", fontWeight: 700, color: "#0f172a" }}>{stats.totalDistance} km</h3>
-                <span style={{ fontSize: "0.75rem", color: "#059669", fontWeight: 500 }}><ArrowUpRight size={12} style={{ display: "inline", verticalAlign: "middle" }} /> +12.4% vs last month</span>
+          <div className="ff-card" style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            
+            {/* Header & Meta */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #f1f5f9", paddingBottom: "1rem" }}>
+              <div>
+                <h3 style={{ fontSize: "1.125rem", fontWeight: 700, color: "#0f172a" }}>{reportData.report_title}</h3>
+                <p style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.125rem" }}>Period: {reportData.date_range} | Generated at {reportData.generated_at}</p>
               </div>
-
-              <div className="ff-stat-card" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: 600 }}>Est. Fuel Costs</span>
-                  <DollarSign size={16} color="#059669" />
-                </div>
-                <h3 style={{ fontSize: "1.75rem", fontWeight: 700, color: "#0f172a" }}>₹{stats.fuelExpenses.toLocaleString()}</h3>
-                <span style={{ fontSize: "0.75rem", color: "#d97706", fontWeight: 500 }}>Within projected budget</span>
-              </div>
-
-              <div className="ff-stat-card" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: 600 }}>Completed Dispatches</span>
-                  <BarChart3 size={16} color="#8b5cf6" />
-                </div>
-                <h3 style={{ fontSize: "1.75rem", fontWeight: 700, color: "#0f172a" }}>{stats.tripsCount} trips</h3>
-                <span style={{ fontSize: "0.75rem", color: "#059669", fontWeight: 500 }}>100% resolution rate</span>
-              </div>
-
-              <div className="ff-stat-card" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: 600 }}>On-Time Dispatch Rate</span>
-                  <TrendingUp size={16} color="#06b6d4" />
-                </div>
-                <h3 style={{ fontSize: "1.75rem", fontWeight: 700, color: "#0f172a" }}>{stats.onTimeRate}</h3>
-                <span style={{ fontSize: "0.75rem", color: "#059669", fontWeight: 500 }}>Excellent performance</span>
-              </div>
-
+              <span style={{ padding: "0.25rem 0.75rem", background: "#eff6ff", color: "#1d4ed8", borderRadius: "0.5rem", fontSize: "0.75rem", fontWeight: 700 }}>
+                Live Preview
+              </span>
             </div>
 
-            {/* Charts section */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }} className="reports-grid">
-              
-              {/* Bar chart - Dispatches per route */}
-              <div className="ff-card" style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
-                <div>
-                  <h4 style={{ fontSize: "0.9375rem", fontWeight: 700, color: "#0f172a" }}>Trip Milestones by Distance (km)</h4>
-                  <p style={{ fontSize: "0.75rem", color: "#64748b" }}>Overview of scheduled routes and planned mileage</p>
-                </div>
-
-                {tripStats.length > 0 ? (
-                  <div style={{ height: "200px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "1rem", paddingTop: "1rem" }}>
-                    {tripStats.map((item, idx) => {
-                      const maxVal = Math.max(...tripStats.map(ts => ts.val));
-                      const pct = (item.val / (maxVal > 0 ? maxVal : 1)) * 100;
-                      return (
-                        <div key={idx} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, gap: "0.5rem" }}>
-                          <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>{item.val}</span>
-                          <motion.div 
-                            initial={{ height: 0 }}
-                            animate={{ height: `${pct}%` }}
-                            transition={{ duration: 0.5, delay: idx * 0.1 }}
-                            style={{ width: "100%", maxWidth: "32px", background: item.color || "#6366f1", borderRadius: "4px 4px 0 0", minHeight: "8px" }} 
-                          />
-                          <span style={{ fontSize: "0.6875rem", color: "#94a3b8", fontWeight: 600, whiteSpace: "nowrap" }}>{item.route}</span>
-                        </div>
-                      );
-                    })}
+            {/* Metric Summaries */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
+              {activeTab === "fleet-utilization" && (
+                <>
+                  <div style={{ background: "#f8fafc", padding: "1rem", borderRadius: "0.75rem", border: "1px solid #e2e8f0" }}>
+                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>Total Vehicles</span>
+                    <h4 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f172a" }}>{reportData.total_vehicles}</h4>
                   </div>
-                ) : (
-                  <div style={{ height: "200px", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: "0.875rem" }}>
-                    No chart data available.
+                  <div style={{ background: "#f8fafc", padding: "1rem", borderRadius: "0.75rem", border: "1px solid #e2e8f0" }}>
+                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>Utilization Rate</span>
+                    <h4 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#059669" }}>{reportData.utilization_rate_pct}%</h4>
                   </div>
-                )}
-              </div>
+                </>
+              )}
 
-              {/* Trend Chart (SVG Line Chart) */}
-              <div className="ff-card" style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
-                <div>
-                  <h4 style={{ fontSize: "0.9375rem", fontWeight: 700, color: "#0f172a" }}>Daily Average Fuel Efficiency</h4>
-                  <p style={{ fontSize: "0.75rem", color: "#64748b" }}>Trend analysis (km per Litre)</p>
-                </div>
-
-                {fuelEfficiency.length > 0 ? (
-                  <div style={{ height: "200px", position: "relative", width: "100%" }}>
-                    <svg viewBox="0 0 500 200" style={{ width: "100%", height: "100%" }}>
-                      {/* Grid lines */}
-                      {[50, 100, 150].map(y => <line key={y} x1="0" y1={y} x2="500" y2={y} stroke="#f1f5f9" strokeWidth="1" />)}
-                      
-                      {/* Line path */}
-                      <motion.path 
-                        initial={{ pathLength: 0 }}
-                        animate={{ pathLength: 1 }}
-                        transition={{ duration: 0.8 }}
-                        d={fuelEfficiency.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')} 
-                        fill="none" 
-                        stroke="url(#gradient)" 
-                        strokeWidth="3.5" 
-                        strokeLinecap="round"
-                      />
-
-                      <defs>
-                        <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                          <stop offset="0%" stopColor="#3b82f6" />
-                          <stop offset="50%" stopColor="#6366f1" />
-                          <stop offset="100%" stopColor="#8b5cf6" />
-                        </linearGradient>
-                      </defs>
-
-                      {fuelEfficiency.map((pt, i) => (
-                        <g key={i}>
-                          <circle cx={pt.x} cy={pt.y} r="5" fill="white" stroke="#6366f1" strokeWidth="2.5" />
-                          <text x={pt.x} y="185" fontSize="10" fill="#94a3b8" textAnchor="middle" fontWeight="600">{pt.label}</text>
-                        </g>
-                      ))}
-                    </svg>
+              {activeTab === "fuel-consumption" && (
+                <>
+                  <div style={{ background: "#f8fafc", padding: "1rem", borderRadius: "0.75rem", border: "1px solid #e2e8f0" }}>
+                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>Total Fuel Consumed</span>
+                    <h4 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f172a" }}>{reportData.total_fuel_liters} L</h4>
                   </div>
-                ) : (
-                  <div style={{ height: "200px", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: "0.875rem" }}>
-                    No chart data available.
+                  <div style={{ background: "#f8fafc", padding: "1rem", borderRadius: "0.75rem", border: "1px solid #e2e8f0" }}>
+                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>Total Cost</span>
+                    <h4 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#059669" }}>₹{reportData.total_cost_inr?.toLocaleString()}</h4>
                   </div>
-                )}
-              </div>
+                </>
+              )}
 
+              {activeTab === "delivery-performance" && (
+                <>
+                  <div style={{ background: "#f8fafc", padding: "1rem", borderRadius: "0.75rem", border: "1px solid #e2e8f0" }}>
+                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>Total Shipments</span>
+                    <h4 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f172a" }}>{reportData.total_shipments}</h4>
+                  </div>
+                  <div style={{ background: "#f8fafc", padding: "1rem", borderRadius: "0.75rem", border: "1px solid #e2e8f0" }}>
+                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>On-Time Rate</span>
+                    <h4 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#059669" }}>{reportData.on_time_rate_pct}%</h4>
+                  </div>
+                </>
+              )}
             </div>
-          </>
+
+            {/* Table Preview */}
+            <div className="ff-table-container">
+              <table className="ff-table">
+                <thead>
+                  {activeTab === "fleet-utilization" && (
+                    <tr>
+                      <th style={{ paddingLeft: "1.5rem" }}>Vehicle Reg</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Capacity (Tonnes)</th>
+                      <th style={{ paddingRight: "1.5rem" }}>Trips in Period</th>
+                    </tr>
+                  )}
+                  {activeTab === "fuel-consumption" && (
+                    <tr>
+                      <th style={{ paddingLeft: "1.5rem" }}>Vehicle Reg</th>
+                      <th>Driver</th>
+                      <th>Refill Date</th>
+                      <th>Fuel (Liters)</th>
+                      <th style={{ paddingRight: "1.5rem" }}>Cost (₹)</th>
+                    </tr>
+                  )}
+                  {activeTab === "driver-performance" && (
+                    <tr>
+                      <th style={{ paddingLeft: "1.5rem" }}>Driver Name</th>
+                      <th>License Number</th>
+                      <th>Trips Completed</th>
+                      <th>Attendance Rate</th>
+                      <th style={{ paddingRight: "1.5rem" }}>On-Time Rate</th>
+                    </tr>
+                  )}
+                  {activeTab === "delivery-performance" && (
+                    <tr>
+                      <th style={{ paddingLeft: "1.5rem" }}>Tracking #</th>
+                      <th>Customer Name</th>
+                      <th>Route</th>
+                      <th>Vehicle</th>
+                      <th style={{ paddingRight: "1.5rem" }}>Status</th>
+                    </tr>
+                  )}
+                  {activeTab === "maintenance" && (
+                    <tr>
+                      <th style={{ paddingLeft: "1.5rem" }}>Vehicle Reg</th>
+                      <th>Maintenance Type</th>
+                      <th>Service Date</th>
+                      <th>Cost (₹)</th>
+                      <th style={{ paddingRight: "1.5rem" }}>Resolution Status</th>
+                    </tr>
+                  )}
+                </thead>
+                <tbody>
+                  {reportData.details?.map((row, idx) => (
+                    <tr key={idx}>
+                      {activeTab === "fleet-utilization" && (
+                        <>
+                          <td style={{ paddingLeft: "1.5rem", fontWeight: 700, color: "#2563eb" }}>{row.registration_number}</td>
+                          <td>{row.type}</td>
+                          <td><span className={`ff-badge ${row.status?.toLowerCase()}`}>{row.status}</span></td>
+                          <td style={{ fontWeight: 600 }}>{row.capacity_tonnes} T</td>
+                          <td style={{ paddingRight: "1.5rem", fontWeight: 700, color: "#0f172a" }}>{row.total_trips}</td>
+                        </>
+                      )}
+                      {activeTab === "fuel-consumption" && (
+                        <>
+                          <td style={{ paddingLeft: "1.5rem", fontWeight: 700, color: "#2563eb" }}>{row.vehicle_reg}</td>
+                          <td>{row.driver_name}</td>
+                          <td>{row.refill_date}</td>
+                          <td style={{ fontWeight: 600 }}>{row.fuel_amount_liters} L</td>
+                          <td style={{ paddingRight: "1.5rem", fontWeight: 700, color: "#059669" }}>₹{row.cost_inr?.toLocaleString()}</td>
+                        </>
+                      )}
+                      {activeTab === "driver-performance" && (
+                        <>
+                          <td style={{ paddingLeft: "1.5rem", fontWeight: 700, color: "#0f172a" }}>{row.driver_name}</td>
+                          <td style={{ fontFamily: "monospace" }}>{row.license_number}</td>
+                          <td style={{ fontWeight: 600 }}>{row.completed_trips}</td>
+                          <td><span style={{ fontWeight: 700, color: "#059669" }}>{row.attendance_rate_pct}%</span></td>
+                          <td style={{ paddingRight: "1.5rem" }}><span style={{ fontWeight: 700, color: "#2563eb" }}>{row.on_time_rate_pct}%</span></td>
+                        </>
+                      )}
+                      {activeTab === "delivery-performance" && (
+                        <>
+                          <td style={{ paddingLeft: "1.5rem", fontWeight: 700, color: "#6366f1", fontFamily: "monospace" }}>#{row.tracking_number}</td>
+                          <td style={{ fontWeight: 600, color: "#0f172a" }}>{row.customer_name}</td>
+                          <td>{row.source} → {row.destination}</td>
+                          <td>{row.vehicle_reg}</td>
+                          <td style={{ paddingRight: "1.5rem" }}><span className={`ff-badge ${row.status?.toLowerCase()}`}>{row.status}</span></td>
+                        </>
+                      )}
+                      {activeTab === "maintenance" && (
+                        <>
+                          <td style={{ paddingLeft: "1.5rem", fontWeight: 700, color: "#2563eb" }}>{row.vehicle_reg}</td>
+                          <td>{row.maintenance_type}</td>
+                          <td>{row.service_date}</td>
+                          <td style={{ fontWeight: 700, color: "#e11d48" }}>₹{row.cost_inr?.toLocaleString()}</td>
+                          <td style={{ paddingRight: "1.5rem" }}><span className={`ff-badge ${row.resolution_status === "Resolved" ? "completed" : "pending"}`}>{row.resolution_status}</span></td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+          </div>
         )}
 
       </div>
-      <style>{`
-        @media (max-width: 768px) { .reports-grid { grid-template-columns: 1fr !important; } }
-      `}</style>
     </AppLayout>
   );
 }

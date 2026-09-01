@@ -17,5 +17,6 @@ class Shipment(Base):
     vehicle_id = Column(UUID(as_uuid=True), ForeignKey("vehicles.vehicle_id", ondelete="SET NULL"), nullable=True)
     driver_id = Column(UUID(as_uuid=True), ForeignKey("drivers.driver_id", ondelete="SET NULL"), nullable=True)
     status = Column(String(30), nullable=False, default="Created")
+    expected_delivery_time = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

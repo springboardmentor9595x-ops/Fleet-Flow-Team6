@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     EMAIL_FROM: str = ""
     FRONTEND_URL: str = "http://localhost:5173"
     GOOGLE_MAPS_API_KEY: str = ""
+    REDIS_URL: str = "redis://localhost:6379/0"
 
     model_config = SettingsConfigDict(
         env_file=".env",
