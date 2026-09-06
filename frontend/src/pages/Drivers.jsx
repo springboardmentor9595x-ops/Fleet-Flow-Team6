@@ -33,15 +33,19 @@ export default function Drivers() {
 
   const canManage = user && ["Admin", "FleetManager"].includes(user.role);
 
+  const [leaveRequests, setLeaveRequests] = useState([]);
+
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [dRes, vRes] = await Promise.all([
+      const [dRes, vRes, lRes] = await Promise.all([
         api.get("/drivers"),
-        api.get("/fleet/vehicles")
+        api.get("/fleet/vehicles"),
+        api.get("/attendance/leave-requests").catch(() => ({ data: [] }))
       ]);
       setDrivers(Array.isArray(dRes.data) ? dRes.data : []);
       setVehicles(Array.isArray(vRes.data) ? vRes.data : []);
+      setLeaveRequests(Array.isArray(lRes.data) ? lRes.data : []);
       setError(null);
     } catch (err) {
       console.error(err);
@@ -54,6 +58,28 @@ export default function Drivers() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleApproveLeave = async (leaveId) => {
+    try {
+      await api.put(`/attendance/leave-requests/${leaveId}/approve`);
+      alert("Leave request approved successfully! Driver attendance set to 'On Leave'.");
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.detail || "Failed to approve leave request.");
+    }
+  };
+
+  const handleRejectLeave = async (leaveId) => {
+    try {
+      await api.put(`/attendance/leave-requests/${leaveId}/reject`);
+      alert("Leave request rejected.");
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.detail || "Failed to reject leave request.");
+    }
+  };
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -128,6 +154,94 @@ export default function Drivers() {
     <AppLayout title="Driver Roster & Attendance" subtitle="Manage driver profiles, licenses, vehicle assignments, and attendance logs.">
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
         
+        {/* Driver Leave Approvals Section */}
+        {canManage && leaveRequests && leaveRequests.length > 0 && (
+          <div className="ff-card" style={{ padding: "1.5rem" }}>
+            <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#0f172a", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <CalendarCheck size={18} color="#d97706" />
+              <span>Driver Leave Approvals</span>
+              <span style={{ fontSize: "0.75rem", background: "#fef3c7", color: "#b45309", padding: "0.125rem 0.5rem", borderRadius: "9999px", fontWeight: 700 }}>
+                {leaveRequests.filter(r => r.status === "Pending").length} Pending
+              </span>
+            </h3>
+
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc" }}>
+                    <th style={{ padding: "0.625rem", textAlign: "left", color: "#94a3b8" }}>Driver</th>
+                    <th style={{ padding: "0.625rem", textAlign: "left", color: "#94a3b8" }}>License</th>
+                    <th style={{ padding: "0.625rem", textAlign: "left", color: "#94a3b8" }}>Requested Dates</th>
+                    <th style={{ padding: "0.625rem", textAlign: "left", color: "#94a3b8" }}>Reason</th>
+                    <th style={{ padding: "0.625rem", textAlign: "left", color: "#94a3b8" }}>Status</th>
+                    <th style={{ padding: "0.625rem", textAlign: "right", color: "#94a3b8" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaveRequests.map((req, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "0.625rem", fontWeight: 700, color: "#0f172a" }}>{req.driver_name}</td>
+                      <td style={{ padding: "0.625rem", color: "#64748b", fontFamily: "monospace" }}>{req.license_number || "N/A"}</td>
+                      <td style={{ padding: "0.625rem", fontWeight: 700, color: "#2563eb" }}>{req.start_date} → {req.end_date}</td>
+                      <td style={{ padding: "0.625rem", color: "#475569" }}>{req.reason || "N/A"}</td>
+                      <td style={{ padding: "0.625rem" }}>
+                        <span style={{
+                          padding: "0.25rem 0.625rem",
+                          borderRadius: "0.375rem",
+                          fontWeight: 700,
+                          fontSize: "0.75rem",
+                          background: req.status === "Approved" ? "#dcfce7" : req.status === "Rejected" ? "#fee2e2" : "#fef3c7",
+                          color: req.status === "Approved" ? "#15803d" : req.status === "Rejected" ? "#b91c1c" : "#b45309"
+                        }}>
+                          {req.status}
+                        </span>
+                      </td>
+                      <td style={{ padding: "0.625rem", textAlign: "right" }}>
+                        {req.status === "Pending" ? (
+                          <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+                            <button
+                              onClick={() => handleApproveLeave(req.leave_id)}
+                              style={{
+                                padding: "0.375rem 0.75rem",
+                                borderRadius: "0.5rem",
+                                border: "none",
+                                background: "#10b981",
+                                color: "white",
+                                fontWeight: 700,
+                                fontSize: "0.75rem",
+                                cursor: "pointer"
+                              }}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => handleRejectLeave(req.leave_id)}
+                              style={{
+                                padding: "0.375rem 0.75rem",
+                                borderRadius: "0.5rem",
+                                border: "none",
+                                background: "#ef4444",
+                                color: "white",
+                                fontWeight: 700,
+                                fontSize: "0.75rem",
+                                cursor: "pointer"
+                              }}
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>Reviewed</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* Header Actions */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
@@ -221,17 +335,17 @@ export default function Drivers() {
               </div>
 
               {/* Attendance Control Tag */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc", padding: "0.625rem", borderRadius: "0.75rem", border: "1px solid rgba(15,23,42,0.06)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>
-                  <CalendarCheck size={14} color="#3b82f6" />
-                  <span>Attendance: {d.today_attendance || "Not Marked"}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: d.today_attendance && d.today_attendance !== "Not Marked" ? "#f0fdf4" : "#fffbeb", padding: "0.625rem", borderRadius: "0.75rem", border: d.today_attendance && d.today_attendance !== "Not Marked" ? "1px solid #bbf7d0" : "1px solid #fde68a" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.75rem", fontWeight: 700, color: d.today_attendance && d.today_attendance !== "Not Marked" ? "#15803d" : "#b45309" }}>
+                  <CalendarCheck size={14} color={d.today_attendance && d.today_attendance !== "Not Marked" ? "#16a34a" : "#d97706"} />
+                  <span>Attendance: {d.today_attendance && d.today_attendance !== "Not Marked" ? `Marked (${d.today_attendance})` : "Not Marked"}</span>
                 </div>
                 {canManage && (
                   <button
                     onClick={() => { setAttModalDriver(d); setAttStatus("Present"); }}
                     style={{ fontSize: "0.75rem", color: "#059669", background: "none", border: "none", cursor: "pointer", fontWeight: 700 }}
                   >
-                    Mark
+                    {d.today_attendance && d.today_attendance !== "Not Marked" ? "Update" : "Mark"}
                   </button>
                 )}
               </div>

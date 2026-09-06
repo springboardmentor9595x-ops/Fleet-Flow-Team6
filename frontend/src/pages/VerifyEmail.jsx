@@ -80,6 +80,8 @@ export default function VerifyEmail() {
     }
   };
 
+  const isUnverified = searchParams.get("unverified") === "true";
+
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#f8fafc", alignItems: "center", justifyContent: "center", padding: "2rem 1.5rem" }}>
       <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} style={{ width: "100%", maxWidth: "460px" }}>
@@ -95,6 +97,12 @@ export default function VerifyEmail() {
         {/* Verification Card */}
         <div style={{ background: "white", borderRadius: "1.5rem", padding: "2.5rem", boxShadow: "0 20px 60px rgba(15,23,42,0.10), 0 4px 16px rgba(15,23,42,0.05)", border: "1.5px solid rgba(15,23,42,0.07)" }}>
           
+          {isUnverified && (
+            <div style={{ background: "#fffbeb", border: "1.5px solid #fde68a", color: "#b45309", padding: "0.875rem 1rem", borderRadius: "0.75rem", fontSize: "0.84375rem", fontWeight: 600, marginBottom: "1.5rem", lineHeight: 1.5 }}>
+              ⚠️ Account unverified. Please verify your email before logging in. An OTP code has been sent to your email.
+            </div>
+          )}
+
           <div style={{ marginBottom: "2rem", textAlign: "center" }}>
             <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f172a", marginBottom: "0.5rem" }}>Enter Verification Code</h2>
             <p style={{ color: "#64748b", fontSize: "0.9375rem", lineHeight: 1.5 }}>

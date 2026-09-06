@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -40,6 +41,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.exceptions import RequestValidationError
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    msg_list = []
+    for err in errors:
+        loc_str = " -> ".join([str(l) for l in err.get("loc", []) if str(l) != "body"])
+        msg = err.get("msg", "Invalid input value")
+        if "value is not a valid email address" in msg.lower():
+            msg = "Please enter a valid email address with a valid domain (e.g. user@example.com)."
+        elif "value error," in msg.lower():
+            msg = re.sub(r"^value error,\s*", "", msg, flags=re.IGNORECASE)
+        msg_list.append(f"{loc_str}: {msg}" if loc_str else msg)
+    
+    formatted_detail = "; ".join(msg_list)
+    return JSONResponse(
+        status_code=422,
+        content={"detail": formatted_detail}
+    )
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     import traceback
@@ -67,6 +89,32 @@ app.include_router(attendance_router)
 
 @app.on_event("startup")
 async def startup_event():
+    # Database migration check for profile_picture column and leave_requests table
+    try:
+        from database import SessionLocal
+        from sqlalchemy import text
+        db = SessionLocal()
+        db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture TEXT;"))
+        db.execute(text("ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_status_check;"))
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS leave_requests (
+                leave_id UUID PRIMARY KEY,
+                driver_id UUID NOT NULL REFERENCES drivers(driver_id) ON DELETE CASCADE,
+                user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                reason TEXT,
+                status VARCHAR(20) NOT NULL DEFAULT 'Pending',
+                reviewed_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
+                reviewed_at TIMESTAMP WITH TIME ZONE,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        """))
+        db.commit()
+        db.close()
+    except Exception as ex:
+        print(f"Database schema migration check: {ex}")
+
     # Launch background GPS simulation task
     asyncio.create_task(gps_simulation_loop())
     # Run initial maintenance alert check

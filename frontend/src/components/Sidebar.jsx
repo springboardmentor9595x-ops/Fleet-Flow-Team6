@@ -2,21 +2,19 @@ import { motion } from "framer-motion";
 import {
   BarChart3, Bell, ChevronLeft, ChevronRight, Fuel,
   LayoutDashboard, LogOut, Package2, Route, Settings,
-  ShieldCheck, Truck, UserCircle2, Users, Wrench, Navigation, Gauge
+  ShieldCheck, Truck, UserCircle2, Users, Wrench, Navigation, Gauge, Sun, Moon
 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function Sidebar({ collapsed, onToggle }) {
-  const { user, logout } = useAuth();
+  const { user, logout, theme, toggleTheme } = useAuth();
   const navigate = useNavigate();
   const role = user?.role || "Admin";
 
   const items = {
     Admin: [
-      { label: "Admin Command",    to: "/admin",               icon: ShieldCheck      },
-      { label: "Fleet Dashboard",  to: "/fleet-dashboard",     icon: Gauge            },
-      { label: "Logistics Dashboard", to: "/logistics-dashboard", icon: Navigation   },
+      { label: "Admin Dashboard",  to: "/admin",               icon: ShieldCheck      },
       { label: "Shipments",        to: "/shipments",           icon: Package2         },
       { label: "Users",            to: "/users",               icon: Users            },
       { label: "Drivers",          to: "/drivers",             icon: UserCircle2      },
@@ -35,6 +33,7 @@ export default function Sidebar({ collapsed, onToggle }) {
       { label: "Vehicles",         to: "/vehicles",            icon: Truck            },
       { label: "Drivers",          to: "/drivers",             icon: UserCircle2      },
       { label: "Trips",            to: "/trips",               icon: Route            },
+      { label: "Reports",          to: "/reports",             icon: BarChart3        },
       { label: "Maintenance",      to: "/maintenance",         icon: Wrench           },
       { label: "Fuel Logs",        to: "/fuel",                icon: Fuel             },
       { label: "Notifications",    to: "/notifications",       icon: Bell             },
@@ -59,6 +58,7 @@ export default function Sidebar({ collapsed, onToggle }) {
       { label: "Maintenance",      to: "/maintenance",         icon: Wrench           },
       { label: "Fuel Logs",        to: "/fuel",                icon: Fuel             },
       { label: "Notifications",    to: "/notifications",       icon: Bell             },
+      { label: "Settings",         to: "/settings",            icon: Settings         },
     ],
   };
 
@@ -155,9 +155,19 @@ export default function Sidebar({ collapsed, onToggle }) {
         ))}
       </nav>
 
+      {/* Theme Toggle Button */}
+      <button 
+        onClick={toggleTheme}
+        title={theme === "dark" ? "Switch to Light Theme" : "Switch to Dark Theme"}
+        style={{ display: "flex", alignItems: "center", gap: "0.625rem", borderRadius: "0.75rem", border: theme === "dark" ? "1.5px solid rgba(255,255,255,0.12)" : "1.5px solid rgba(15,23,42,0.07)", padding: "0.625rem 0.75rem", fontSize: "0.875rem", fontWeight: 600, color: theme === "dark" ? "#fbbf24" : "#475569", background: theme === "dark" ? "rgba(251,191,36,0.1)" : "#f8fafc", cursor: "pointer", marginTop: "0.5rem", overflow: "hidden", whiteSpace: "nowrap" }}
+      >
+        {theme === "dark" ? <Sun size={16} color="#fbbf24" style={{ flexShrink: 0 }} /> : <Moon size={16} color="#6366f1" style={{ flexShrink: 0 }} />}
+        {!collapsed && <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>}
+      </button>
+
       {/* Logout */}
       <button onClick={handleLogout}
-        style={{ display: "flex", alignItems: "center", gap: "0.625rem", borderRadius: "0.75rem", border: "1.5px solid rgba(15,23,42,0.07)", padding: "0.625rem 0.75rem", fontSize: "0.875rem", fontWeight: 500, color: "#64748b", background: "transparent", cursor: "pointer", marginTop: "0.75rem", transition: "background 0.15s, color 0.15s, border-color 0.15s", overflow: "hidden", whiteSpace: "nowrap" }}
+        style={{ display: "flex", alignItems: "center", gap: "0.625rem", borderRadius: "0.75rem", border: "1.5px solid rgba(15,23,42,0.07)", padding: "0.625rem 0.75rem", fontSize: "0.875rem", fontWeight: 500, color: "#64748b", background: "transparent", cursor: "pointer", marginTop: "0.5rem", transition: "background 0.15s, color 0.15s, border-color 0.15s", overflow: "hidden", whiteSpace: "nowrap" }}
         onMouseEnter={(e) => { e.currentTarget.style.background = "#fff1f2"; e.currentTarget.style.color = "#e11d48"; e.currentTarget.style.borderColor = "#fecdd3"; }}
         onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#64748b"; e.currentTarget.style.borderColor = "rgba(15,23,42,0.07)"; }}>
         <LogOut size={16} style={{ flexShrink: 0 }} />

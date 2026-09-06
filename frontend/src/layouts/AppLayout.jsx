@@ -186,22 +186,37 @@ export default function AppLayout({ children, title, subtitle }) {
             </div>
 
             {/* Theme toggle */}
-            <button onClick={toggleTheme}
-              style={{ borderRadius: "0.75rem", border: "1.5px solid rgba(15,23,42,0.08)", padding: "0.5rem", color: "#64748b", background: "transparent", cursor: "pointer", display: "flex", transition: "background 0.15s, color 0.15s" }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "#f8fafc"; e.currentTarget.style.color = "#0f172a"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#64748b"; }}>
-              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            <button 
+              onClick={toggleTheme}
+              title={theme === "dark" ? "Switch to Light Theme" : "Switch to Dark Theme"}
+              style={{ 
+                borderRadius: "0.75rem", 
+                border: theme === "dark" ? "1.5px solid rgba(255,255,255,0.12)" : "1.5px solid rgba(15,23,42,0.08)", 
+                padding: "0.45rem 0.75rem", 
+                color: theme === "dark" ? "#fbbf24" : "#475569", 
+                background: theme === "dark" ? "rgba(251,191,36,0.12)" : "#f8fafc", 
+                cursor: "pointer", 
+                display: "flex", 
+                alignItems: "center",
+                gap: "0.375rem",
+                transition: "background 0.15s, color 0.15s" 
+              }}
+            >
+              {theme === "dark" ? <Sun size={17} color="#fbbf24" /> : <Moon size={17} color="#6366f1" />}
+              <span style={{ fontSize: "0.75rem", fontWeight: 700 }}>
+                {theme === "dark" ? "Light" : "Dark"}
+              </span>
             </button>
 
             {/* User chip */}
-            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", borderRadius: "0.875rem", border: "1.5px solid rgba(15,23,42,0.08)", background: "#f8fafc", padding: "0.375rem 0.875rem 0.375rem 0.5rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", borderRadius: "0.875rem", border: theme === "dark" ? "1.5px solid rgba(255,255,255,0.12)" : "1.5px solid rgba(15,23,42,0.08)", background: theme === "dark" ? "#1e293b" : "#f8fafc", padding: "0.375rem 0.875rem 0.375rem 0.5rem" }}>
               <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#3b82f6)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "white" }}>
                   {user?.full_name?.split(" ")[0]?.[0] || "F"}
                 </span>
               </div>
               <div className="user-chip-text">
-                <p style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#0f172a", whiteSpace: "nowrap" }}>
+                <p style={{ fontSize: "0.8125rem", fontWeight: 600, color: theme === "dark" ? "#f8fafc" : "#0f172a", whiteSpace: "nowrap" }}>
                   {user?.full_name || "FleetFlow User"}
                 </p>
                 <p style={{ fontSize: "0.6875rem", color: "#94a3b8" }}>{user?.role || "Admin"}</p>

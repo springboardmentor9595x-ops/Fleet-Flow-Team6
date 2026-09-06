@@ -34,6 +34,10 @@ def build_driver_response(driver: Driver, user: User, db: Session) -> dict:
     trips_completed = db.query(Trip).filter(Trip.driver_id == driver.driver_id, Trip.status == "Completed").count()
     trips_total = db.query(Trip).filter(Trip.driver_id == driver.driver_id).count()
 
+    today = datetime.date.today()
+    today_att = db.query(Attendance).filter(Attendance.driver_id == driver.driver_id, Attendance.date == today).first()
+    today_attendance = today_att.status if today_att else "Not Marked"
+
     return {
         "driver_id": str(driver.driver_id),
         "user_id": str(user.user_id),
@@ -44,6 +48,7 @@ def build_driver_response(driver: Driver, user: User, db: Session) -> dict:
         "experience_years": driver.experience_years,
         "address": driver.address,
         "status": driver.status or "Active",
+        "today_attendance": today_attendance,
         "assigned_vehicle": v_info,
         "trips_completed": trips_completed,
         "trips_total": trips_total,

@@ -94,9 +94,12 @@ export default function LogisticsDashboard() {
         };
         const color = colorMap[s.status] || "#6366f1";
 
+        const isDelivered = s.status === "Delivered" || s.status === "Completed";
+        const symbol = isDelivered ? "🏁" : "📦";
+
         const icon = L.divIcon({
           className: "custom-shipment-pin",
-          html: `<div style="background-color: ${color}; width: 20px; height: 20px; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 12px ${color}; cursor: pointer; display: flex; align-items: center; justify-content: center; color: white; font-size: 10px; font-weight: bold;">📦</div>`
+          html: `<div style="background-color: ${color}; width: 26px; height: 26px; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 12px ${color}; cursor: pointer; display: flex; align-items: center; justify-content: center; color: white; font-size: 13px; font-weight: bold;">${symbol}</div>`
         });
 
         const popupContent = `

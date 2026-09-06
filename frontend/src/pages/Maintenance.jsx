@@ -160,7 +160,10 @@ export default function Maintenance() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
-                  {["Vehicle", "Type", "Service Date", "Next Due Date", "Cost", "Remarks", "Status", "Resolution", "Actions"].map((h) => (
+                  {(canManage
+                    ? ["Vehicle", "Type", "Service Date", "Next Due Date", "Cost", "Remarks", "Status", "Resolution", "Actions"]
+                    : ["Vehicle", "Type", "Service Date", "Next Due Date", "Cost", "Remarks", "Status", "Resolution"]
+                  ).map((h) => (
                     <th key={h} style={{ textAlign: "left", padding: "0.75rem 1rem", color: "#94a3b8", fontWeight: 600, fontSize: "0.75rem", letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: "1.5px solid #f1f5f9" }}>
                       {h}
                     </th>
@@ -216,8 +219,8 @@ export default function Maintenance() {
                           {isResolved ? "Resolved ✓" : "Unresolved ⏳"}
                         </span>
                       </td>
-                      <td style={{ padding: "1rem" }}>
-                        {canManage && (
+                      {canManage && (
+                        <td style={{ padding: "1rem" }}>
                           <div style={{ display: "flex", gap: "0.375rem", alignItems: "center", flexWrap: "wrap" }}>
                             {m.status === "Scheduled" && !isResolved && (
                               <button
@@ -246,8 +249,8 @@ export default function Maintenance() {
                               Delete
                             </button>
                           </div>
-                        )}
-                      </td>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}

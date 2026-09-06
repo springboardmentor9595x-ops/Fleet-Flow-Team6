@@ -7,7 +7,7 @@ from database import get_db
 from app.models.user import User
 from app.schemas.user import (
     UserSignup, UserResponse, Token, TokenWithUser,
-    VerifyOTPRequest, SendOTPRequest
+    VerifyOTPRequest, SendOTPRequest, UserProfileUpdate, ChangePasswordRequest
 )
 from app.core.security import (
     hash_password,
@@ -309,3 +309,76 @@ def test_email(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_msg
         )
+
+
+# -----------------------------
+# User Profile Endpoints
+# -----------------------------
+@router.get(
+    "/me",
+    response_model=UserResponse
+)
+def get_current_user_profile(
+    current_user: User = Depends(get_current_user)
+):
+    return current_user
+
+
+@router.put(
+    "/profile",
+    response_model=UserResponse
+)
+def update_user_profile(
+    payload: UserProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if payload.full_name is not None and payload.full_name.strip():
+        current_user.full_name = payload.full_name.strip()
+    elif payload.first_name is not None or payload.last_name is not None:
+        first = (payload.first_name or "").strip()
+        last = (payload.last_name or "").strip()
+        combined = f"{first} {last}".strip()
+        if combined:
+            current_user.full_name = combined
+
+    if payload.phone is not None and payload.phone.strip():
+        current_user.phone = payload.phone.strip()
+
+    if payload.profile_picture is not None:
+        current_user.profile_picture = payload.profile_picture.strip()
+
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not verify_password(payload.current_password, current_user.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect."
+        )
+
+    if payload.new_password != payload.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password mismatch: New password and confirm password do not match."
+        )
+
+    if len(payload.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 8 characters long."
+        )
+
+    current_user.password = hash_password(payload.new_password)
+    db.commit()
+    db.refresh(current_user)
+
+    return {"message": "Password has been changed successfully!"}

@@ -17,7 +17,7 @@ router = APIRouter(
 
 @router.get("/summary")
 def get_summary(
-    current_user: User = Depends(require_roles(["Admin", "FleetManager", "Dispatcher"])),
+    current_user: User = Depends(require_roles(["Admin", "FleetManager", "Dispatcher", "Driver"])),
     db: Session = Depends(get_db)
 ):
     total_vehicles = db.query(Vehicle).count()

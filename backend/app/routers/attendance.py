@@ -6,7 +6,8 @@ from database import get_db
 
 from app.models.user import User, RoleEnum
 from app.models.driver import Driver
-from app.models.attendance import Attendance
+from app.models.attendance import Attendance, LeaveRequest
+from app.models.notification import Notification
 from app.core.security import get_current_user, require_roles
 
 router = APIRouter(
@@ -45,7 +46,7 @@ def mark_attendance(
             pass
 
     status_val = data.get("status", "Present")
-    if status_val not in ["Present", "Leave", "Absent"]:
+    if status_val not in ["Present", "Leave", "Absent", "On Leave"]:
         status_val = "Present"
 
     att = db.query(Attendance).filter(Attendance.driver_id == driver_id, Attendance.date == att_date).first()
@@ -131,3 +132,204 @@ def get_fleet_attendance(
         })
 
     return results
+
+
+# ---------------------------------------------------------
+# Leave Request Endpoints
+# ---------------------------------------------------------
+
+@router.post("/leave-request", status_code=status.HTTP_201_CREATED)
+def submit_leave_request(
+    data: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    driver = db.query(Driver).filter(Driver.user_id == current_user.user_id).first()
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver profile not found.")
+
+    start_str = data.get("start_date")
+    end_str = data.get("end_date")
+    reason = data.get("reason", "").strip()
+
+    if not start_str or not end_str:
+        raise HTTPException(status_code=400, detail="Start date and end date are required.")
+
+    try:
+        start_date = datetime.datetime.strptime(str(start_str), "%Y-%m-%d").date()
+        end_date = datetime.datetime.strptime(str(end_str), "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="Start date cannot be after end date.")
+
+    req = LeaveRequest(
+        leave_id=uuid.uuid4(),
+        driver_id=driver.driver_id,
+        user_id=current_user.user_id,
+        start_date=start_date,
+        end_date=end_date,
+        reason=reason,
+        status="Pending"
+    )
+    db.add(req)
+
+    # Send Notification to Admins & Fleet Managers
+    admins = db.query(User).filter(User.role.in_([RoleEnum.Admin, RoleEnum.FleetManager])).all()
+    for admin in admins:
+        notif = Notification(
+            notification_id=uuid.uuid4(),
+            user_id=admin.user_id,
+            title="New Driver Leave Request",
+            message=f"Driver {current_user.full_name} has requested leave from {start_date} to {end_date}.",
+            type="warning"
+        )
+        db.add(notif)
+
+    db.commit()
+    db.refresh(req)
+
+    return {
+        "message": "Leave request submitted successfully",
+        "leave_id": str(req.leave_id),
+        "status": req.status,
+        "start_date": req.start_date.isoformat(),
+        "end_date": req.end_date.isoformat(),
+        "reason": req.reason
+    }
+
+
+@router.get("/my-leave-requests")
+def get_my_leave_requests(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    driver = db.query(Driver).filter(Driver.user_id == current_user.user_id).first()
+    if not driver:
+        return []
+
+    requests = db.query(LeaveRequest).filter(LeaveRequest.driver_id == driver.driver_id).order_by(LeaveRequest.created_at.desc()).all()
+    return [
+        {
+            "leave_id": str(r.leave_id),
+            "start_date": r.start_date.isoformat(),
+            "end_date": r.end_date.isoformat(),
+            "reason": r.reason,
+            "status": r.status,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None
+        }
+        for r in requests
+    ]
+
+
+@router.get("/leave-requests")
+def get_all_leave_requests(
+    status_filter: str | None = Query(None),
+    current_user: User = Depends(require_roles(["Admin", "FleetManager", "Dispatcher"])),
+    db: Session = Depends(get_db)
+):
+    query = db.query(LeaveRequest, Driver, User).join(Driver, LeaveRequest.driver_id == Driver.driver_id).join(User, Driver.user_id == User.user_id)
+    if status_filter:
+        query = query.filter(LeaveRequest.status == status_filter)
+
+    results = query.order_by(LeaveRequest.created_at.desc()).all()
+    return [
+        {
+            "leave_id": str(r.leave_id),
+            "driver_id": str(d.driver_id),
+            "driver_name": u.full_name,
+            "license_number": d.license_number,
+            "email": u.email,
+            "start_date": r.start_date.isoformat(),
+            "end_date": r.end_date.isoformat(),
+            "reason": r.reason,
+            "status": r.status,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None
+        }
+        for r, d, u in results
+    ]
+
+
+@router.put("/leave-requests/{leave_id}/approve")
+def approve_leave_request(
+    leave_id: str,
+    current_user: User = Depends(require_roles(["Admin", "FleetManager"])),
+    db: Session = Depends(get_db)
+):
+    try:
+        l_uuid = uuid.UUID(leave_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid leave_id format")
+
+    req = db.query(LeaveRequest).filter(LeaveRequest.leave_id == l_uuid).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Leave request not found.")
+
+    req.status = "Approved"
+    req.reviewed_by = current_user.user_id
+    req.reviewed_at = datetime.datetime.now(datetime.timezone.utc)
+
+    # Populate Attendance entries as "On Leave" for dates in range
+    curr_date = req.start_date
+    while curr_date <= req.end_date:
+        att = db.query(Attendance).filter(Attendance.driver_id == req.driver_id, Attendance.date == curr_date).first()
+        if att:
+            att.status = "Leave"
+        else:
+            att = Attendance(
+                attendance_id=uuid.uuid4(),
+                driver_id=req.driver_id,
+                date=curr_date,
+                status="Leave"
+            )
+            db.add(att)
+        curr_date += datetime.timedelta(days=1)
+
+    # Send Notification to Driver
+    notif = Notification(
+        notification_id=uuid.uuid4(),
+        user_id=req.user_id,
+        title="Leave Request Approved",
+        message=f"Your leave request from {req.start_date} to {req.end_date} has been APPROVED.",
+        type="success"
+    )
+    db.add(notif)
+
+    db.commit()
+    return {"message": "Leave request approved successfully", "leave_id": str(req.leave_id), "status": "Approved"}
+
+
+@router.put("/leave-requests/{leave_id}/reject")
+def reject_leave_request(
+    leave_id: str,
+    current_user: User = Depends(require_roles(["Admin", "FleetManager"])),
+    db: Session = Depends(get_db)
+):
+    try:
+        l_uuid = uuid.UUID(leave_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid leave_id format")
+
+    req = db.query(LeaveRequest).filter(LeaveRequest.leave_id == l_uuid).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Leave request not found.")
+
+    req.status = "Rejected"
+    req.reviewed_by = current_user.user_id
+    req.reviewed_at = datetime.datetime.now(datetime.timezone.utc)
+
+    # Send Notification to Driver
+    notif = Notification(
+        notification_id=uuid.uuid4(),
+        user_id=req.user_id,
+        title="Leave Request Rejected",
+        message=f"Your leave request from {req.start_date} to {req.end_date} was REJECTED.",
+        type="error"
+    )
+    db.add(notif)
+
+    db.commit()
+    return {"message": "Leave request rejected successfully", "leave_id": str(req.leave_id), "status": "Rejected"}

@@ -209,9 +209,19 @@ def get_driver_performance_report(
             att_query = att_query.filter(Attendance.date >= d_start)
         if d_end:
             att_query = att_query.filter(Attendance.date <= d_end)
-        total_att = att_query.count()
-        present_att = att_query.filter(Attendance.status == "Present").count()
-        attendance_rate = round((present_att / total_att) * 100.0, 1) if total_att > 0 else 100.0
+        
+        present_count = att_query.filter(Attendance.status == "Present").count()
+        
+        if d_start and d_end:
+            period_days = max(1, (d_end - d_start).days + 1)
+        elif d_start:
+            period_days = max(1, (datetime.date.today() - d_start).days + 1)
+        else:
+            total_records = att_query.count()
+            period_days = max(1, total_records) if total_records > 0 else 7
+
+        attendance_pct = round((present_count / period_days) * 100.0, 1) if period_days > 0 else 100.0
+        attendance_str = f"{present_count}/{period_days} days present ({min(100.0, attendance_pct)}%)"
 
         # On-time delivery rate
         s_query = db.query(Shipment).filter(Shipment.driver_id == d.driver_id)
@@ -226,12 +236,15 @@ def get_driver_performance_report(
         details.append({
             "driver_id": str(d.driver_id),
             "driver_name": u.full_name,
-            "license_number": d.license_number,
+            "license_number": d.license_number or "N/A",
             "phone": u.phone or "N/A",
             "status": d.status or "Active",
             "total_trips": total_trips,
             "completed_trips": completed_trips,
-            "attendance_rate_pct": attendance_rate,
+            "days_present": present_count,
+            "period_days": period_days,
+            "attendance_rate": attendance_str,
+            "attendance_rate_pct": min(100.0, attendance_pct),
             "on_time_rate_pct": max(0.0, on_time_rate)
         })
 
@@ -428,8 +441,8 @@ def export_report_pdf(
         rows = [[d["vehicle_reg"], d["driver_name"], d["refill_date"], f"{d['fuel_amount_liters']} L", f"₹{d['cost_inr']:,.2f}"] for d in data["details"]]
     elif report_type == "driver-performance":
         data = get_driver_performance_report(start_date=start_date, end_date=end_date, current_user=current_user, db=db)
-        headers = ["Driver Name", "License", "Trips Completed", "Attendance %", "On-Time %"]
-        rows = [[d["driver_name"], d["license_number"], str(d["completed_trips"]), f"{d['attendance_rate_pct']}%", f"{d['on_time_rate_pct']}%"] for d in data["details"]]
+        headers = ["Driver Name", "Licence Number", "Trips Completed", "Attendance Rate (Days Present)", "On-Time Rate (%)"]
+        rows = [[d["driver_name"], d["license_number"], str(d["completed_trips"]), d["attendance_rate"], f"{d['on_time_rate_pct']}%"] for d in data["details"]]
     elif report_type == "delivery-performance":
         data = get_delivery_performance_report(start_date=start_date, end_date=end_date, current_user=current_user, db=db)
         headers = ["Tracking #", "Customer", "Source → Dest", "Vehicle", "Status"]
@@ -505,10 +518,10 @@ def export_report_excel(
 
     elif report_type == "driver-performance":
         data = get_driver_performance_report(start_date=start_date, end_date=end_date, current_user=current_user, db=db)
-        headers = ["Driver Name", "License Number", "Total Trips", "Completed Trips", "Attendance Rate (%)", "On-Time Rate (%)"]
+        headers = ["Driver Name", "Licence Number", "Trips Completed", "Days Present", "Period Total Days", "Attendance Rate", "On-Time Rate (%)"]
         ws.append(headers)
         for d in data["details"]:
-            ws.append([d["driver_name"], d["license_number"], d["total_trips"], d["completed_trips"], d["attendance_rate_pct"], d["on_time_rate_pct"]])
+            ws.append([d["driver_name"], d["license_number"], d["completed_trips"], d["days_present"], d["period_days"], d["attendance_rate"], f"{d['on_time_rate_pct']}%"])
 
     elif report_type == "delivery-performance":
         data = get_delivery_performance_report(start_date=start_date, end_date=end_date, current_user=current_user, db=db)

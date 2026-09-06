@@ -1,14 +1,17 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, Plus, Trash2, Mail, Phone, Shield, Search, AlertCircle } from "lucide-react";
+import { User, Plus, Trash2, Mail, Phone, Shield, Search, AlertCircle, CheckCircle2, AlertTriangle, Filter } from "lucide-react";
 import AppLayout from "../layouts/AppLayout";
 import api from "../api/axios";
+import { useAuth } from "../context/AuthContext";
 
 export default function Users() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL"); // "ALL", "VERIFIED", "UNVERIFIED"
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({
     full_name: "",
@@ -79,29 +82,78 @@ export default function Users() {
     }
   };
 
-  const filteredUsers = users.filter(u => 
-    u.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.role?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredUsers = users.filter(u => {
+    const matchesSearch =
+      u.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.role?.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const isVerifiedBool = Boolean(u.is_verified);
+    if (statusFilter === "VERIFIED") return matchesSearch && isVerifiedBool;
+    if (statusFilter === "UNVERIFIED") return matchesSearch && !isVerifiedBool;
+    return matchesSearch;
+  });
+
+  const unverifiedCount = users.filter(u => !u.is_verified).length;
+  const verifiedCount = users.filter(u => u.is_verified).length;
 
   return (
-    <AppLayout title="Users Directory" subtitle="View and manage corporate roles, system operators, and permissions">
+    <AppLayout title="Users Directory" subtitle="View and manage corporate roles, verification statuses, and permissions">
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
         
+        {/* Unverified Accounts Alert Notice for Admin */}
+        {unverifiedCount > 0 && (
+          <div style={{ background: "#fffbeb", border: "1.5px solid #fde68a", color: "#b45309", padding: "1rem 1.25rem", borderRadius: "0.875rem", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
+              <AlertTriangle size={20} color="#d97706" />
+              <div>
+                <strong style={{ fontSize: "0.9375rem" }}>{unverifiedCount} Unverified Account{unverifiedCount > 1 ? "s" : ""} Pending Verification</strong>
+                <p style={{ fontSize: "0.8125rem", color: "#92400e", marginTop: "0.125rem" }}>
+                  Unverified users are blocked from direct dashboard access until OTP verification is completed.
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setStatusFilter(statusFilter === "UNVERIFIED" ? "ALL" : "UNVERIFIED")}
+              className="ff-btn-secondary"
+              style={{ fontSize: "0.8125rem", padding: "0.375rem 0.75rem", background: "#fef3c7", borderColor: "#fde68a", color: "#b45309" }}
+            >
+              {statusFilter === "UNVERIFIED" ? "Show All Users" : "View Unverified Users"}
+            </button>
+          </div>
+        )}
+
         {/* Controls row */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
-          <div style={{ position: "relative", flex: 1, maxWidth: "320px" }}>
-            <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }} />
-            <input 
-              type="text" 
-              placeholder="Search by name, email, role..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="ff-input"
-              style={{ paddingLeft: "2.25rem" }}
-            />
+          <div style={{ display: "flex", gap: "0.75rem", flex: 1, flexWrap: "wrap" }}>
+            
+            {/* Search Input */}
+            <div style={{ position: "relative", flex: 1, minWidth: "240px", maxWidth: "340px" }}>
+              <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }} />
+              <input 
+                type="text" 
+                placeholder="Search by name, email, role..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="ff-input"
+                style={{ paddingLeft: "2.25rem" }}
+              />
+            </div>
+
+            {/* Verification Status Filter */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="ff-select"
+              style={{ width: "auto", minWidth: "170px" }}
+            >
+              <option value="ALL">All Statuses ({users.length})</option>
+              <option value="VERIFIED">Verified ({verifiedCount})</option>
+              <option value="UNVERIFIED">Unverified ({unverifiedCount})</option>
+            </select>
+
           </div>
+
           <button onClick={() => setShowModal(true)} className="ff-btn-primary">
             <Plus size={16} />
             Create User
@@ -120,11 +172,11 @@ export default function Users() {
             <span>{error}</span>
           </div>
         ) : filteredUsers.length === 0 ? (
-          <div style={{ textAlignment: "center", padding: "3rem", background: "white", borderRadius: "1rem", border: "1.5px solid rgba(15,23,42,0.06)", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
+          <div style={{ textAlign: "center", padding: "3rem", background: "white", borderRadius: "1rem", border: "1.5px solid rgba(15,23,42,0.06)", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
             <User size={48} color="#94a3b8" />
             <div>
               <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#0f172a" }}>No Users Found</h3>
-              <p style={{ fontSize: "0.875rem", color: "#64748b", marginTop: "0.25rem" }}>No data available. Create a user to get started.</p>
+              <p style={{ fontSize: "0.875rem", color: "#64748b", marginTop: "0.25rem" }}>No user accounts match the selected criteria.</p>
             </div>
           </div>
         ) : (
@@ -137,7 +189,7 @@ export default function Users() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
               <thead>
                 <tr>
-                  {["User Details", "Contact", "System Role", "Actions"].map((h) => (
+                  {["User Details", "Contact", "System Role", "Account Status", "Actions"].map((h) => (
                     <th key={h} style={{ textAlign: "left", padding: "0.75rem 1rem", color: "#94a3b8", fontWeight: 600, fontSize: "0.75rem", letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: "1.5px solid #f1f5f9" }}>
                       {h}
                     </th>
@@ -145,43 +197,67 @@ export default function Users() {
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map((u) => (
-                  <tr key={u.user_id} style={{ borderBottom: "1px solid #f8fafc", transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
-                    <td style={{ padding: "1rem" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                        <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#3b82f6)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 700 }}>
-                          {u.full_name?.substring(0, 2).toUpperCase() || "US"}
+                {filteredUsers.map((u) => {
+                  const isVerified = Boolean(u.is_verified);
+                  return (
+                    <tr key={u.user_id} style={{ borderBottom: "1px solid #f8fafc", transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                      <td style={{ padding: "1rem" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                          <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: isVerified ? "linear-gradient(135deg,#6366f1,#3b82f6)" : "#f1f5f9", border: isVerified ? "none" : "1px solid #cbd5e1", display: "flex", alignItems: "center", justifyContent: "center", color: isVerified ? "white" : "#64748b", fontWeight: 700 }}>
+                            {u.full_name?.substring(0, 2).toUpperCase() || "US"}
+                          </div>
+                          <div>
+                            <p style={{ fontWeight: 700, color: "#0f172a" }}>{u.full_name}</p>
+                            <span style={{ fontSize: "0.6875rem", color: "#94a3b8" }}>ID: {u.user_id.substring(0, 8)}...</span>
+                          </div>
                         </div>
-                        <div>
-                          <p style={{ fontWeight: 700, color: "#0f172a" }}>{u.full_name}</p>
-                          <span style={{ fontSize: "0.6875rem", color: "#94a3b8" }}>ID: {u.user_id.substring(0, 8)}...</span>
+                      </td>
+                      <td style={{ padding: "1rem", color: "#475569" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.8125rem" }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}><Mail size={12} color="#94a3b8" /> {u.email}</span>
+                          {u.phone && <span style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}><Phone size={12} color="#94a3b8" /> {u.phone}</span>}
                         </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: "1rem", color: "#475569" }}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.8125rem" }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}><Mail size={12} color="#94a3b8" /> {u.email}</span>
-                        {u.phone && <span style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}><Phone size={12} color="#94a3b8" /> {u.phone}</span>}
-                      </div>
-                    </td>
-                    <td style={{ padding: "1rem" }}>
-                      <span className={`ff-badge ${getRoleBadgeClass(u.role)}`}>
-                        <Shield size={10} style={{ marginRight: "2px" }} />
-                        {u.role}
-                      </span>
-                    </td>
-                    <td style={{ padding: "1rem" }}>
-                      <button 
-                        onClick={() => handleDelete(u.user_id)}
-                        style={{ background: "transparent", border: "none", color: "#e11d48", padding: "0.375rem", borderRadius: "0.5rem", cursor: "pointer", display: "flex", alignItems: "center", transition: "background 0.2s" }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = "#fff1f2"}
-                        onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td style={{ padding: "1rem" }}>
+                        <span className={`ff-badge ${getRoleBadgeClass(u.role)}`}>
+                          <Shield size={10} style={{ marginRight: "2px" }} />
+                          {u.role}
+                        </span>
+                      </td>
+                      
+                      {/* Account Verification Status Column */}
+                      <td style={{ padding: "1rem" }}>
+                        {isVerified ? (
+                          <span style={{ background: "#ecfdf5", color: "#047857", border: "1.5px solid #a7f3d0", padding: "0.25rem 0.625rem", borderRadius: "0.5rem", fontWeight: 700, fontSize: "0.75rem", display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
+                            <CheckCircle2 size={13} /> Verified
+                          </span>
+                        ) : (
+                          <span style={{ background: "#fff1f2", color: "#e11d48", border: "1.5px solid #fecdd3", padding: "0.25rem 0.625rem", borderRadius: "0.5rem", fontWeight: 700, fontSize: "0.75rem", display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
+                            <AlertTriangle size={13} /> Unverified
+                          </span>
+                        )}
+                      </td>
+
+                      <td style={{ padding: "1rem" }}>
+                        {u.role === "Admin" || u.user_id === currentUser?.user_id ? (
+                          <span style={{ fontSize: "0.75rem", color: "#94a3b8", fontWeight: 600, background: "#f1f5f9", padding: "0.25rem 0.5rem", borderRadius: "0.375rem" }}>
+                            Protected
+                          </span>
+                        ) : (
+                          <button 
+                            onClick={() => handleDelete(u.user_id)}
+                            style={{ background: "transparent", border: "none", color: "#e11d48", padding: "0.375rem", borderRadius: "0.5rem", cursor: "pointer", display: "flex", alignItems: "center", transition: "background 0.2s" }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = "#fff1f2"}
+                            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                            title="Delete User Account"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </motion.div>

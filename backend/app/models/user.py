@@ -23,6 +23,7 @@ class User(Base):
     password = Column(String(255), nullable=False)
     phone = Column(String(20), nullable=True)
     role = Column(Enum(RoleEnum, name="role_enum"), nullable=False, default=RoleEnum.Driver)
+    profile_picture = Column(String, nullable=True)
     is_verified = Column(Boolean, default=False, nullable=False)
     verification_code = Column(String(500), nullable=True)
     otp_code = Column(String(6), nullable=True)

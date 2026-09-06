@@ -258,6 +258,65 @@ def get_admin_dashboard_analytics(
             "attendance_rate_pct": att_rate
         })
 
+    # 1. Trips Status Breakdown (Scheduled vs In Transit vs Completed)
+    trips_all = db.query(Trip).all()
+    trips_status_breakdown = {"Scheduled": 0, "In Transit": 0, "Completed": 0}
+    for t in trips_all:
+        st = (t.status or "Scheduled").strip()
+        if st in ["In Transit", "Active", "In-Transit"]:
+            trips_status_breakdown["In Transit"] += 1
+        elif st == "Completed":
+            trips_status_breakdown["Completed"] += 1
+        else:
+            trips_status_breakdown["Scheduled"] += 1
+
+    # 2. Shipment Lifecycle Distribution (Created, Assigned, In Transit, Delivered, Delayed, Cancelled)
+    shipments_all = db.query(Shipment).all()
+    shipment_status_breakdown = {"Created": 0, "Assigned": 0, "In Transit": 0, "Delivered": 0, "Cancelled": 0}
+    for s in shipments_all:
+        st = s.status or "Created"
+        if st in shipment_status_breakdown:
+            shipment_status_breakdown[st] += 1
+        else:
+            shipment_status_breakdown["Created"] += 1
+
+    # 3. Trips Over Time (Last 7 Days Trend)
+    today = datetime.date.today()
+    trips_over_time = []
+    for i in range(6, -1, -1):
+        day = today - datetime.timedelta(days=i)
+        day_str = day.strftime("%b %d")
+        cnt = db.query(Trip).filter(func.date(Trip.start_time) == day).count()
+        trips_over_time.append({"date": day_str, "trips": cnt})
+
+    # System Analytics: User Role Distribution
+    users_all = db.query(User).all()
+    users_role_breakdown = {"Admin": 0, "FleetManager": 0, "Dispatcher": 0, "Driver": 0, "Manager": 0}
+    for u in users_all:
+        r = u.role.value if hasattr(u.role, 'value') else str(u.role)
+        if r in users_role_breakdown:
+            users_role_breakdown[r] += 1
+        else:
+            users_role_breakdown[r] = 1
+
+    # System Analytics: Vehicle Register Breakdown (Type & Status)
+    vehicles_all = db.query(Vehicle).all()
+    vehicle_type_breakdown = {}
+    vehicle_status_breakdown = {"Available": 0, "Assigned": 0, "In Transit": 0, "Maintenance": 0}
+    for v in vehicles_all:
+        vt = v.vehicle_type or "Truck"
+        vehicle_type_breakdown[vt] = vehicle_type_breakdown.get(vt, 0) + 1
+        st = v.status or "Available"
+        if st in vehicle_status_breakdown:
+            vehicle_status_breakdown[st] += 1
+        else:
+            vehicle_status_breakdown["Available"] += 1
+
+    # System Analytics: Shipment Delivery Fulfillment Rate
+    delivered_count = shipment_status_breakdown.get("Delivered", 0)
+    total_shipments_count = len(shipments_all)
+    delivery_fulfillment_rate = round((delivered_count / total_shipments_count) * 100.0, 1) if total_shipments_count > 0 else 100.0
+
     # Maintenance analytics
     maint_records = db.query(VehicleMaintenance).all()
     total_maint_cost = sum(float(m.cost or 0.0) for m in maint_records)
@@ -270,6 +329,15 @@ def get_admin_dashboard_analytics(
             "total_shipments": total_shipments,
             "total_trips": total_trips
         },
+        "system_analytics": {
+            "users_role_breakdown": users_role_breakdown,
+            "vehicle_type_breakdown": vehicle_type_breakdown,
+            "vehicle_status_breakdown": vehicle_status_breakdown,
+            "delivery_fulfillment_rate_pct": delivery_fulfillment_rate
+        },
+        "trips_status_breakdown": trips_status_breakdown,
+        "shipment_status_breakdown": shipment_status_breakdown,
+        "trips_over_time": trips_over_time,
         "attention_shipments": att_list,
         "driver_leaderboard": driver_leaderboard,
         "maintenance_analytics": {

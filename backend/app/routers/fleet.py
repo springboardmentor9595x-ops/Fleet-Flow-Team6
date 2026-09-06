@@ -48,10 +48,15 @@ def create_user(data: dict, current_user: User = Depends(require_roles(["Admin"]
 @router.delete("/users/{user_id}")
 def delete_user(user_id: str, current_user: User = Depends(require_roles(["Admin"])), db: Session = Depends(get_db)):
     user_uuid = uuid.UUID(user_id)
-    user = db.query(User).filter(User.user_id == user_uuid).first()
-    if not user:
+    target_user = db.query(User).filter(User.user_id == user_uuid).first()
+    if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
-    db.delete(user)
+
+    user_role_str = target_user.role.value if hasattr(target_user.role, 'value') else str(target_user.role)
+    if user_role_str == "Admin" or target_user.user_id == current_user.user_id:
+        raise HTTPException(status_code=400, detail="Cannot delete Admin accounts or your own account.")
+
+    db.delete(target_user)
     db.commit()
     return {"message": "User deleted successfully"}
 

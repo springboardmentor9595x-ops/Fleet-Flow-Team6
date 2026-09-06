@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Truck, Mail, Lock, Eye, EyeOff, AlertCircle, ArrowRight, Sparkles, Key, RefreshCw, CheckCircle2
+  Truck, Mail, Lock, Eye, EyeOff, AlertCircle, ArrowRight, Sparkles, Key, RefreshCw, CheckCircle2, ArrowLeft
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import api from "../api/axios";
@@ -44,18 +44,45 @@ export default function Login() {
   const statItems = [
     { value: stats.vehicles, label: "Vehicles tracked" },
     { value: stats.onTime, label: "On-time delivery" },
-    { value: stats.activeRoutes,    label: "Active routes" },
+    { value: stats.activeRoutes, label: "Active routes" },
   ];
 
-  const [email, setEmail]     = useState("");
+  // Standard Login State
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPw, setShowPw]   = useState(false);
-  const [error, setError]     = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Forgot Password / OTP Mode State
+  const [isOtpMode, setIsOtpMode] = useState(false);
+  const [otpStep, setOtpStep] = useState(1); // 1: Request OTP, 2: Enter OTP
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSuccess, setOtpSuccess] = useState("");
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+
+  const redirectUserByRole = (userData) => {
+    const role = userData?.role;
+    if (role === "Driver") {
+      navigate("/driver-dashboard");
+    } else if (role === "Admin") {
+      navigate("/admin");
+    } else if (role === "FleetManager") {
+      navigate("/fleet-dashboard");
+    } else if (role === "Dispatcher") {
+      navigate("/logistics-dashboard");
+    } else {
+      navigate("/dashboard");
+    }
+  };
+
+  // Handle Standard Password Login
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setNotice("");
     setLoading(true);
     try {
       const formData = new URLSearchParams();
@@ -65,11 +92,14 @@ export default function Login() {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
       });
       if (response.data.requires_otp) {
-        navigate(`/verify-email?email=${encodeURIComponent(email)}`);
+        setNotice(response.data.message || "Account unverified. Please verify your email address before logging in. An OTP has been sent to your email.");
+        setTimeout(() => {
+          navigate(`/verify-email?email=${encodeURIComponent(email)}&unverified=true`);
+        }, 1200);
       } else {
         const userData = response.data.user || null;
         login(response.data.access_token, userData);
-        navigate("/dashboard");
+        redirectUserByRole(userData);
       }
     } catch (err) {
       const detail = err.response?.data?.detail;
@@ -77,6 +107,66 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Step 1: Send OTP to user's registered email
+  const handleSendOtp = async (e) => {
+    if (e) e.preventDefault();
+    setError("");
+    setOtpSuccess("");
+    if (!email || !email.includes("@")) {
+      setError("Please enter a valid email address to receive OTP.");
+      return;
+    }
+    setSendingOtp(true);
+    try {
+      const res = await api.post("/auth/send-otp", { email: email.trim() });
+      setOtpSuccess(res.data?.message || "An OTP has been sent to your registered email address.");
+      setOtpStep(2);
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      setError(detail || "Failed to send OTP. Please check if your email is registered.");
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
+  // Step 2: Verify OTP and log in directly to dashboard
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    setError("");
+    setOtpSuccess("");
+    if (!otpCode || otpCode.trim().length !== 6) {
+      setError("Please enter the complete 6-digit OTP code sent to your email.");
+      return;
+    }
+    setVerifyingOtp(true);
+    try {
+      const res = await api.post("/auth/verify-otp", {
+        email: email.trim(),
+        otp: otpCode.trim()
+      });
+      const userData = res.data.user || null;
+      login(res.data.access_token, userData);
+      setOtpSuccess("OTP verified successfully! Redirecting to your dashboard...");
+      setTimeout(() => {
+        redirectUserByRole(userData);
+      }, 800);
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      setError(detail || "Invalid or expired OTP code. Please check your email and try again.");
+    } finally {
+      setVerifyingOtp(false);
+    }
+  };
+
+  const toggleOtpMode = (enable) => {
+    setIsOtpMode(enable);
+    setError("");
+    setNotice("");
+    setOtpSuccess("");
+    setOtpStep(1);
+    setOtpCode("");
   };
 
   return (
@@ -173,9 +263,14 @@ export default function Login() {
 
           {/* Card */}
           <div style={{ background: "white", borderRadius: "1.5rem", padding: "2.5rem", boxShadow: "0 20px 60px rgba(15,23,42,0.10), 0 4px 16px rgba(15,23,42,0.06)", border: "1.5px solid rgba(15,23,42,0.07)" }}>
+            
             <div style={{ marginBottom: "2rem" }}>
-              <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f172a", marginBottom: "0.375rem" }}>Welcome back</h2>
-              <p style={{ color: "#64748b", fontSize: "0.9375rem" }}>Sign in to your FleetFlow account</p>
+              <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f172a", marginBottom: "0.375rem" }}>
+                {isOtpMode ? "Forgot Password / OTP Login" : "Welcome back"}
+              </h2>
+              <p style={{ color: "#64748b", fontSize: "0.9375rem" }}>
+                {isOtpMode ? "Log in securely via One-Time Password sent to your email" : "Sign in to your FleetFlow account"}
+              </p>
             </div>
 
             <AnimatePresence>
@@ -185,43 +280,155 @@ export default function Login() {
                   {error}
                 </motion.div>
               )}
+              {notice && (
+                <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "#fffbeb", border: "1.5px solid #fde68a", color: "#b45309", padding: "0.875rem 1rem", borderRadius: "0.75rem", fontSize: "0.875rem", fontWeight: 600, marginBottom: "1.25rem" }}>
+                  <AlertCircle size={18} style={{ flexShrink: 0 }} color="#d97706" />
+                  {notice}
+                </motion.div>
+              )}
+              {otpSuccess && (
+                <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "#ecfdf5", border: "1.5px solid #a7f3d0", color: "#047857", padding: "0.875rem 1rem", borderRadius: "0.75rem", fontSize: "0.875rem", fontWeight: 600, marginBottom: "1.25rem" }}>
+                  <CheckCircle2 size={18} style={{ flexShrink: 0 }} color="#10b981" />
+                  {otpSuccess}
+                </motion.div>
+              )}
             </AnimatePresence>
 
-            <form onSubmit={handleSubmit}>
-              {/* Email */}
-              <div style={{ marginBottom: "1.125rem" }}>
-                <label className="ff-label" htmlFor="login-email">Email address</label>
-                <div style={{ position: "relative" }}>
-                  <Mail size={16} style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", color: "#94a3b8", pointerEvents: "none" }} />
-                  <input id="login-email" className="ff-input" type="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} required style={{ paddingLeft: "2.75rem" }} />
+            {/* Standard Password Login Form */}
+            {!isOtpMode && (
+              <form onSubmit={handleSubmit}>
+                {/* Email */}
+                <div style={{ marginBottom: "1.125rem" }}>
+                  <label className="ff-label" htmlFor="login-email">Email address</label>
+                  <div style={{ position: "relative" }}>
+                    <Mail size={16} style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", color: "#94a3b8", pointerEvents: "none" }} />
+                    <input id="login-email" className="ff-input" type="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} required style={{ paddingLeft: "2.75rem" }} />
+                  </div>
                 </div>
-              </div>
 
-              {/* Password */}
-              <div style={{ marginBottom: "1.5rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.375rem" }}>
-                  <label className="ff-label" htmlFor="login-password" style={{ margin: 0 }}>Password</label>
-                  <a href="#" style={{ fontSize: "0.8125rem", color: "#6366f1", fontWeight: 500 }}>Forgot password?</a>
+                {/* Password */}
+                <div style={{ marginBottom: "1.5rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.375rem" }}>
+                    <label className="ff-label" htmlFor="login-password" style={{ margin: 0 }}>Password</label>
+                    <button type="button" onClick={() => toggleOtpMode(true)} style={{ background: "none", border: "none", fontSize: "0.8125rem", color: "#6366f1", fontWeight: 600, cursor: "pointer" }}>
+                      Forgot password?
+                    </button>
+                  </div>
+                  <div style={{ position: "relative" }}>
+                    <Lock size={16} style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", color: "#94a3b8", pointerEvents: "none" }} />
+                    <input id="login-password" className="ff-input" type={showPw ? "text" : "password"} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required style={{ paddingLeft: "2.75rem", paddingRight: "3rem" }} />
+                    <button type="button" onClick={() => setShowPw((p) => !p)} style={{ position: "absolute", right: "1rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#94a3b8", display: "flex", padding: 0 }}>
+                      {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
                 </div>
-                <div style={{ position: "relative" }}>
-                  <Lock size={16} style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", color: "#94a3b8", pointerEvents: "none" }} />
-                  <input id="login-password" className="ff-input" type={showPw ? "text" : "password"} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required style={{ paddingLeft: "2.75rem", paddingRight: "3rem" }} />
-                  <button type="button" onClick={() => setShowPw((p) => !p)} style={{ position: "absolute", right: "1rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#94a3b8", display: "flex", padding: 0 }}>
-                    {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+
+                {/* Submit */}
+                <button id="login-submit" type="submit" className="ff-btn-primary" disabled={loading}
+                  style={{ width: "100%", justifyContent: "center", padding: "0.875rem 1.5rem", fontSize: "0.9375rem", opacity: loading ? 0.7 : 1, cursor: loading ? "not-allowed" : "pointer" }}>
+                  {loading ? (
+                    <><span style={{ width: "16px", height: "16px", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "white", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Signing in…</>
+                  ) : (
+                    <>Sign in <ArrowRight size={16} /></>
+                  )}
+                </button>
+              </form>
+            )}
+
+            {/* OTP Passwordless Login Form */}
+            {isOtpMode && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                
+                {/* Email Address Input */}
+                <div>
+                  <label className="ff-label" htmlFor="otp-email">Registered Email address</label>
+                  <div style={{ position: "relative" }}>
+                    <Mail size={16} style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", color: "#94a3b8", pointerEvents: "none" }} />
+                    <input 
+                      id="otp-email" 
+                      className="ff-input" 
+                      type="email" 
+                      placeholder="you@company.com" 
+                      value={email} 
+                      onChange={(e) => setEmail(e.target.value)} 
+                      required 
+                      disabled={otpStep === 2}
+                      style={{ paddingLeft: "2.75rem", background: otpStep === 2 ? "#f8fafc" : "white" }} 
+                    />
+                  </div>
+                </div>
+
+                {/* Step 1: Send OTP */}
+                {otpStep === 1 && (
+                  <button 
+                    type="button" 
+                    onClick={handleSendOtp} 
+                    className="ff-btn-primary" 
+                    disabled={sendingOtp}
+                    style={{ width: "100%", justifyContent: "center", padding: "0.875rem 1.5rem", fontSize: "0.9375rem" }}
+                  >
+                    {sendingOtp ? (
+                      <><span style={{ width: "16px", height: "16px", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "white", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Sending OTP...</>
+                    ) : (
+                      <>Send OTP Code <Mail size={16} /></>
+                    )}
+                  </button>
+                )}
+
+                {/* Step 2: OTP Verification */}
+                {otpStep === 2 && (
+                  <form onSubmit={handleVerifyOtp} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.375rem" }}>
+                        <label className="ff-label" htmlFor="otp-code" style={{ margin: 0 }}>Enter 6-Digit OTP</label>
+                        <button type="button" onClick={handleSendOtp} disabled={sendingOtp} style={{ background: "none", border: "none", fontSize: "0.75rem", color: "#6366f1", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                          <RefreshCw size={12} /> Resend OTP
+                        </button>
+                      </div>
+                      <div style={{ position: "relative" }}>
+                        <Key size={16} style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", color: "#94a3b8", pointerEvents: "none" }} />
+                        <input 
+                          id="otp-code" 
+                          className="ff-input" 
+                          type="text" 
+                          maxLength={6} 
+                          placeholder="123456" 
+                          value={otpCode} 
+                          onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))} 
+                          required 
+                          style={{ paddingLeft: "2.75rem", letterSpacing: "0.25em", fontWeight: 800, fontSize: "1.125rem", fontFamily: "monospace" }} 
+                        />
+                      </div>
+                    </div>
+
+                    <button 
+                      type="submit" 
+                      className="ff-btn-primary" 
+                      disabled={verifyingOtp}
+                      style={{ width: "100%", justifyContent: "center", padding: "0.875rem 1.5rem", fontSize: "0.9375rem", background: "linear-gradient(135deg, #10b981, #059669)" }}
+                    >
+                      {verifyingOtp ? (
+                        <><span style={{ width: "16px", height: "16px", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "white", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Verifying & Logging in...</>
+                      ) : (
+                        <>Verify OTP & Log In <ArrowRight size={16} /></>
+                      )}
+                    </button>
+                  </form>
+                )}
+
+                {/* Back to Password Sign In */}
+                <div style={{ textAlign: "center", marginTop: "0.5rem" }}>
+                  <button 
+                    type="button" 
+                    onClick={() => toggleOtpMode(false)} 
+                    style={{ background: "none", border: "none", color: "#64748b", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.375rem" }}
+                  >
+                    <ArrowLeft size={14} /> Back to Standard Password Sign In
                   </button>
                 </div>
-              </div>
 
-              {/* Submit */}
-              <button id="login-submit" type="submit" className="ff-btn-primary" disabled={loading}
-                style={{ width: "100%", justifyContent: "center", padding: "0.875rem 1.5rem", fontSize: "0.9375rem", opacity: loading ? 0.7 : 1, cursor: loading ? "not-allowed" : "pointer" }}>
-                {loading ? (
-                  <><span style={{ width: "16px", height: "16px", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "white", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Signing in…</>
-                ) : (
-                  <>Sign in <ArrowRight size={16} /></>
-                )}
-              </button>
-            </form>
+              </div>
+            )}
 
             <p style={{ textAlign: "center", marginTop: "1.5rem", fontSize: "0.875rem", color: "#64748b" }}>
               Don't have an account?{" "}

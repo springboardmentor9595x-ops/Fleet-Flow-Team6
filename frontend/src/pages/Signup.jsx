@@ -38,21 +38,59 @@ export default function Signup() {
 
   const strength = getPasswordStrength(form.password);
 
+  const parseErrorDetail = (detail) => {
+    if (!detail) return "Signup failed. Please try again.";
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      return detail.map((errItem) => {
+        if (typeof errItem === "string") return errItem;
+        if (errItem.msg) return errItem.msg.replace(/^value is not a valid email address:?\s*/i, "Please enter a valid email address (e.g. user@example.com): ");
+        return JSON.stringify(errItem);
+      }).join("; ");
+    }
+    if (typeof detail === "object") {
+      return detail.msg || detail.message || JSON.stringify(detail);
+    }
+    return String(detail);
+  };
+
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+
+    // Validate email format on frontend before sending request
+    const emailTrimmed = (form.email || "").trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (!emailRegex.test(emailTrimmed)) {
+      setError("Please enter a valid email address with a valid domain (e.g. user@example.com).");
+      return;
+    }
+
+    // Validate phone number format on frontend before sending request
+    const phoneRaw = (form.phone || "").trim();
+    const phoneDigits = phoneRaw.replace(/^\+/, "");
+    if (!/^\d+$/.test(phoneDigits)) {
+      setError("Please enter a valid phone number (numbers only, no characters or symbols).");
+      return;
+    }
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+      setError("Please enter a valid 10 to 15 digit phone number.");
+      return;
+    }
+
     setLoading(true);
     try {
-      await api.post("/auth/signup", form);
+      await api.post("/auth/signup", { ...form, email: emailTrimmed, phone: phoneRaw });
       setSuccess(true);
-      setTimeout(() => navigate(`/verify-email?email=${encodeURIComponent(form.email)}`), 2000);
+      setTimeout(() => navigate(`/verify-email?email=${encodeURIComponent(emailTrimmed)}`), 2000);
     } catch (err) {
       if (!err.response) {
         setError("Cannot reach the server. Please make sure the backend is running on port 8000.");
       } else {
-        setError(err.response?.data?.detail || "Signup failed. Please try again.");
+        const parsedError = parseErrorDetail(err.response?.data?.detail);
+        setError(parsedError);
       }
     } finally {
       setLoading(false);

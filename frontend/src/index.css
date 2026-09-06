@@ -41,6 +41,88 @@
   --ff-transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* ---------- Design Tokens — Dark Theme ---------- */
+[data-theme="dark"] {
+  --ff-bg-base:      #0f172a;
+  --ff-bg-surface:   #1e293b;
+  --ff-bg-elevated:  #334155;
+
+  --ff-border:       rgba(255, 255, 255, 0.1);
+  --ff-border-hover: rgba(99, 102, 241, 0.5);
+
+  --ff-text-primary:   #f8fafc;
+  --ff-text-secondary: #cbd5e1;
+  --ff-text-muted:     #94a3b8;
+
+  --ff-shadow-sm:   0 1px 3px rgba(0,0,0,0.4);
+  --ff-shadow:      0 4px 16px rgba(0,0,0,0.5);
+  --ff-shadow-lg:   0 16px 48px rgba(0,0,0,0.6);
+}
+
+[data-theme="dark"] body {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] header {
+  background: rgba(30, 41, 59, 0.85) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] aside {
+  background: #1e293b !important;
+  border-right-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] h1, 
+[data-theme="dark"] h2, 
+[data-theme="dark"] h3, 
+[data-theme="dark"] h4, 
+[data-theme="dark"] h5, 
+[data-theme="dark"] h6 {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .ff-card,
+[data-theme="dark"] .ff-stat-card {
+  background: #1e293b !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .ff-table-container {
+  background: #1e293b !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] .ff-table th {
+  background: #0f172a !important;
+  color: #94a3b8 !important;
+  border-bottom-color: #334155 !important;
+}
+
+[data-theme="dark"] .ff-table td {
+  color: #f1f5f9 !important;
+  border-bottom-color: #334155 !important;
+}
+
+[data-theme="dark"] .ff-table tbody tr:hover td {
+  background: #334155 !important;
+}
+
+[data-theme="dark"] .ff-input,
+[data-theme="dark"] .ff-select {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] .ff-btn-ghost {
+  background: #1e293b !important;
+  color: #cbd5e1 !important;
+  border-color: #334155 !important;
+}
+
 /* ---------- Reset ---------- */
 *,
 *::before,

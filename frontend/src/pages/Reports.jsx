@@ -7,9 +7,9 @@ import api from "../api/axios";
 
 export default function Reports() {
   const { user } = useAuth();
-  const roleUpper = user?.role?.toUpperCase() || "";
+  const roleClean = (user?.role || "").toString().toUpperCase().replace(/[^A-Z]/g, "");
 
-  // Available tabs based on role
+  // Available tabs based on role (Fleet Manager has full access to all 5 report types)
   const allTabs = [
     { id: "fleet-utilization", label: "Fleet Utilization", roles: ["ADMIN", "FLEETMANAGER"] },
     { id: "fuel-consumption", label: "Fuel Consumption", roles: ["ADMIN", "FLEETMANAGER"] },
@@ -18,7 +18,7 @@ export default function Reports() {
     { id: "maintenance", label: "Maintenance Report", roles: ["ADMIN", "FLEETMANAGER"] }
   ];
 
-  const visibleTabs = allTabs.filter(t => t.roles.includes(roleUpper));
+  const visibleTabs = allTabs.filter(t => t.roles.includes(roleClean));
   const initialTab = visibleTabs[0]?.id || "delivery-performance";
 
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -481,9 +481,9 @@ export default function Reports() {
                   {activeTab === "driver-performance" && (
                     <tr>
                       <th style={{ paddingLeft: "1.5rem" }}>Driver Name</th>
-                      <th>License Number</th>
+                      <th>Licence Number</th>
                       <th>Trips Completed</th>
-                      <th>Attendance Rate</th>
+                      <th>Attendance Rate (Days Present)</th>
                       <th style={{ paddingRight: "1.5rem" }}>On-Time Rate</th>
                     </tr>
                   )}
@@ -530,10 +530,18 @@ export default function Reports() {
                       {activeTab === "driver-performance" && (
                         <>
                           <td style={{ paddingLeft: "1.5rem", fontWeight: 700, color: "#0f172a" }}>{row.driver_name}</td>
-                          <td style={{ fontFamily: "monospace" }}>{row.license_number}</td>
-                          <td style={{ fontWeight: 600 }}>{row.completed_trips}</td>
-                          <td><span style={{ fontWeight: 700, color: "#059669" }}>{row.attendance_rate_pct}%</span></td>
-                          <td style={{ paddingRight: "1.5rem" }}><span style={{ fontWeight: 700, color: "#2563eb" }}>{row.on_time_rate_pct}%</span></td>
+                          <td style={{ fontFamily: "monospace", fontWeight: 600 }}>{row.license_number}</td>
+                          <td style={{ fontWeight: 700, color: "#2563eb" }}>{row.completed_trips}</td>
+                          <td>
+                            <span style={{ fontWeight: 700, color: "#059669" }}>
+                              {row.attendance_rate || `${row.attendance_rate_pct}%`}
+                            </span>
+                          </td>
+                          <td style={{ paddingRight: "1.5rem" }}>
+                            <span style={{ fontWeight: 700, color: "#6366f1" }}>
+                              {row.on_time_rate_pct}%
+                            </span>
+                          </td>
                         </>
                       )}
                       {activeTab === "delivery-performance" && (
