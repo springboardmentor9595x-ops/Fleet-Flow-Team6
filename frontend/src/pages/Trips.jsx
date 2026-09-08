@@ -35,14 +35,14 @@ export default function Trips() {
     distance: ""
   });
 
-  const isOpsRole = user && ["Admin", "FleetManager", "Dispatcher"].includes(user.role);
+  const isOpsRole = user && ["Admin", "FleetManager"].includes(user.role);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       const [tripsRes, driversRes, vehiclesRes, shipmentsRes] = await Promise.all([
         api.get("/fleet/trips"),
-        api.get("/fleet/drivers"),
+        isOpsRole ? api.get("/fleet/drivers") : Promise.resolve({ data: [] }),
         api.get("/fleet/vehicles"),
         api.get("/shipments")
       ]);

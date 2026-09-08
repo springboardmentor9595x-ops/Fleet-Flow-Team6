@@ -47,7 +47,7 @@ export default function ShipmentDetail() {
   const polylineRef = useRef(null);
   const wsRef = useRef(null);
 
-  const isOpsRole = user && ["Admin", "FleetManager", "Dispatcher"].includes(user.role);
+  const isOpsRole = user && ["Admin", "FleetManager"].includes(user.role);
 
   const fetchDetails = async () => {
     try {

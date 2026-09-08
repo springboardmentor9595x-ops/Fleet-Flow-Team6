@@ -79,7 +79,7 @@ def get_shipment_alerts(
 @router.post("", response_model=ShipmentResponse, status_code=status.HTTP_201_CREATED)
 def create_shipment(
     shipment_in: ShipmentCreate,
-    current_user: User = Depends(require_roles(["Admin", "FleetManager", "Dispatcher"])),
+    current_user: User = Depends(require_roles(["Admin", "FleetManager"])),
     db: Session = Depends(get_db)
 ):
     # Generate unique tracking number
@@ -155,7 +155,7 @@ def get_shipment(
 def update_shipment(
     shipment_id: uuid.UUID,
     shipment_in: ShipmentUpdate,
-    current_user: User = Depends(require_roles(["Admin", "FleetManager", "Dispatcher"])),
+    current_user: User = Depends(require_roles(["Admin", "FleetManager"])),
     db: Session = Depends(get_db)
 ):
     shipment = db.query(Shipment).filter(Shipment.shipment_id == shipment_id).first()
@@ -177,7 +177,7 @@ def update_shipment(
 @router.delete("/{shipment_id}", status_code=status.HTTP_200_OK)
 def delete_shipment(
     shipment_id: uuid.UUID,
-    current_user: User = Depends(require_roles(["Admin", "FleetManager", "Dispatcher"])),
+    current_user: User = Depends(require_roles(["Admin", "FleetManager"])),
     db: Session = Depends(get_db)
 ):
     shipment = db.query(Shipment).filter(Shipment.shipment_id == shipment_id).first()
@@ -190,7 +190,7 @@ def delete_shipment(
 
 
 # ---------------------------------------------------------
-# Update Shipment Status Only (can be done by Driver or Dispatcher)
+# Update Shipment Status Only (can be done by Driver or Fleet Manager/Admin)
 # ---------------------------------------------------------
 @router.put("/{shipment_id}/status", response_model=ShipmentResponse)
 def update_shipment_status(

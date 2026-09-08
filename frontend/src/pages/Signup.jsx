@@ -8,10 +8,10 @@ import {
 import api from "../api/axios";
 
 const ROLES = [
-  { value: "Admin",        label: "Admin",        description: "Full system access & user management",     color: "#8b5cf6", bg: "#f5f3ff", border: "#ddd6fe" },
-  { value: "FleetManager", label: "Fleet Manager", description: "Vehicles, maintenance & driver oversight",  color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe" },
-  { value: "Dispatcher",   label: "Dispatcher",   description: "Trip assignments & live tracking",          color: "#0891b2", bg: "#ecfeff", border: "#a5f3fc" },
-  { value: "Driver",       label: "Driver",       description: "View assigned trips & vehicle info",        color: "#059669", bg: "#ecfdf5", border: "#a7f3d0" },
+  { value: "Admin", label: "Admin", description: "Full system access & user management", color: "#6366f1", bg: "#f5f3ff", border: "#ddd6fe" },
+  { value: "FleetManager", label: "Fleet Manager", description: "Vehicles, maintenance & driver oversight", color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe" },
+  { value: "Dispatcher", label: "Dispatcher", description: "Trip dispatching, driver & vehicle assignments", color: "#10b981", bg: "#ecfdf5", border: "#a7f3d0" },
+  { value: "Driver", label: "Driver", description: "View assigned trips & vehicle info", color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
 ];
 
 const strengthColors = ["", "#e11d48", "#d97706", "#3b82f6", "#059669"];
@@ -30,7 +30,8 @@ function getPasswordStrength(pw) {
 
 export default function Signup() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ full_name: "", email: "", password: "", phone: "", role: "Admin" });
+  const [form, setForm] = useState({ full_name: "", email: "", password: "", phone: "", role: "Driver" });
+
   const [showPw, setShowPw]   = useState(false);
   const [error, setError]     = useState("");
   const [success, setSuccess] = useState(false);

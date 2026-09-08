@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Truck, Route, Wrench, BarChart3, Bell, TrendingUp, Clock, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Truck, Route, Wrench, BarChart3, Bell, TrendingUp, Clock, CheckCircle2, AlertTriangle, Users } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../layouts/AppLayout";
@@ -22,6 +22,7 @@ const alertStyles = {
 
 const iconMap = {
   Truck: Truck,
+  Users: Users,
   Route: Route,
   Wrench: Wrench,
   TrendingUp: TrendingUp,

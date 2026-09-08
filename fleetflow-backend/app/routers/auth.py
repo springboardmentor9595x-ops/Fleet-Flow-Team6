@@ -1,13 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
+import secrets
+import uuid
 from datetime import datetime, timezone, timedelta
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from sqlalchemy.orm import Session
+from sqlalchemy import or_, func
 
 from database import get_db
-from app.models.user import User
+from app.models.user import User, RoleEnum
 from app.schemas.user import (
     UserSignup, UserResponse, Token, TokenWithUser,
-    VerifyOTPRequest, SendOTPRequest
+    VerifyOTPRequest, SendOTPRequest,
+    AdminSendOTPRequest, AdminVerifyOTPRequest,
+    UserLoginWithRole
 )
 from app.core.security import (
     hash_password,
@@ -17,6 +23,7 @@ from app.core.security import (
 )
 from config import settings
 from app.services.email_service import send_otp_email
+from app.services.audit_service import log_activity
 
 router = APIRouter(
     prefix="/auth",
@@ -24,9 +31,21 @@ router = APIRouter(
 )
 
 
-# -----------------------------
-# User Signup
-# -----------------------------
+def _generate_otp() -> str:
+    """Return a cryptographically secure 6-digit numeric OTP."""
+    return "".join(secrets.choice("0123456789") for _ in range(6))
+
+
+def _otp_expiry() -> datetime:
+    """Return a UTC datetime 5 minutes from now."""
+    return datetime.now(timezone.utc) + timedelta(minutes=5)
+
+
+# ─────────────────────────────────────────
+# POST /auth/signup
+# Allows same email with DIFFERENT roles.
+# Rejects duplicate (email + role).
+# ─────────────────────────────────────────
 @router.post(
     "/signup",
     response_model=UserResponse,
@@ -36,258 +55,392 @@ def signup(
     user: UserSignup,
     db: Session = Depends(get_db)
 ):
+    role_val = user.role.value if hasattr(user.role, "value") else str(user.role)
 
+    # Check composite uniqueness: (email, role)
     existing_user = db.query(User).filter(
-        User.email == user.email
+        User.email == user.email,
+        User.role == role_val
     ).first()
 
     if existing_user:
-        if not existing_user.is_verified:
-            import secrets
-            otp = "".join(secrets.choice("0123456789") for _ in range(6))
+        if existing_user.is_verified:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This account already exists for this role"
+            )
+        else:
+            # Unverified account with same role: update and re-send OTP
+            otp = _generate_otp()
             existing_user.full_name = user.full_name
             existing_user.password = hash_password(user.password)
             existing_user.phone = user.phone
-            existing_user.role = user.role.value
             existing_user.otp_code = otp
-            existing_user.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+            existing_user.otp_expires_at = _otp_expiry()
             db.commit()
             db.refresh(existing_user)
-            
             send_otp_email(existing_user.email, existing_user.full_name, otp)
             return existing_user
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered."
-            )
 
-    import secrets
-    otp = "".join(secrets.choice("0123456789") for _ in range(6))
+    # Create new account under (email, role)
+    otp = _generate_otp()
 
     new_user = User(
         full_name=user.full_name,
         email=user.email,
         password=hash_password(user.password),
         phone=user.phone,
-        role=user.role.value,
+        role=role_val,
         is_verified=False,
         otp_code=otp,
-        otp_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5)
+        otp_expires_at=_otp_expiry(),
     )
 
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
-    send_otp_email(new_user.email, new_user.full_name, otp)
+    # Auto-provision Driver profile if registering as Driver
+    if role_val == "Driver":
+        from app.models.driver import Driver
+        existing_driver = db.query(Driver).filter(Driver.user_id == new_user.user_id).first()
+        if not existing_driver:
+            db.add(Driver(
+                driver_id=uuid.uuid4(),
+                user_id=new_user.user_id,
+                license_number=f"LIC-{str(new_user.user_id)[:6].upper()}",
+                experience_years=1,
+                status="Available"
+            ))
+            db.commit()
+
+    log_activity(
+        db, new_user, action="User Signup", module="Authentication",
+        description=f"New {role_val} account created for {new_user.email}", status="Success"
+    )
+
+    try:
+        send_otp_email(new_user.email, new_user.full_name, otp)
+    except Exception as e:
+        print(f"[OTP Notice]: {e}")
 
     return new_user
 
 
-# -----------------------------
-# User Login
-# -----------------------------
-@router.post(
-    "/login"
-)
-def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
+# ─────────────────────────────────────────
+# POST /auth/login
+# Finds account using email + role + password
+# Supports JSON or Form data
+# ─────────────────────────────────────────
+@router.post("/login")
+async def login(
+    request: Request,
     db: Session = Depends(get_db)
 ):
+    email_or_user = None
+    password = None
+    role = None
 
-    user = db.query(User).filter(
-        User.email == form_data.username
-    ).first()
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+            email_or_user = body.get("email") or body.get("username")
+            password = body.get("password")
+            role = body.get("role")
+        except Exception:
+            pass
+    else:
+        try:
+            form = await request.form()
+            email_or_user = form.get("username") or form.get("email")
+            password = form.get("password")
+            role = form.get("role")
+        except Exception:
+            pass
 
-    if user is None:
+    if not email_or_user or not password:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password."
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Email/username and password are required."
         )
 
-    if not verify_password(
-        form_data.password,
-        user.password
-    ):
+    # Validate role if provided
+    valid_roles = ["Admin", "FleetManager", "Dispatcher", "Driver"]
+    if role:
+        matched_role = next((r for r in valid_roles if r.lower() == role.lower()), None)
+        if not matched_role:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid role"
+            )
+        role = matched_role
+
+    # Query account by (email or driver full_name) AND role (if provided)
+    query = db.query(User).filter(
+        or_(
+            User.email == email_or_user,
+            func.lower(User.full_name) == func.lower(email_or_user)
+        )
+    )
+
+    if role:
+        query = query.filter(User.role == role)
+
+    matching_users = query.all()
+
+    if not matching_users:
+        if role:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Account not found for this email and role"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Account not found"
+            )
+
+    if len(matching_users) > 1:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Multiple accounts found for this email. Please select your role to login."
         )
 
-    import secrets
-    otp = "".join(secrets.choice("0123456789") for _ in range(6))
-    
+    user = matching_users[0]
+
+    # Verify Password / PIN
+    if not verify_password(password, user.password):
+        log_activity(
+            db, user, action="Login Failed", module="Authentication",
+            description=f"Failed login attempt for email {user.email}", status="Failure"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password"
+        )
+
+    # Enforce email verification for non-Admin accounts
+    role_str = user.role.value if hasattr(user.role, "value") else str(user.role)
+    if not user.is_verified and role_str != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account not verified. Please verify your email address using the OTP sent during signup."
+        )
+
+    # Issue JWT token containing sub=str(user.user_id), email=user.email, role=role_str
+    access_token = create_access_token(
+        data={
+            "sub": str(user.user_id),
+            "email": user.email,
+            "role": role_str
+        }
+    )
+
+    log_activity(
+        db, user, action="User Login", module="Authentication",
+        description=f"User {user.full_name} logged in successfully as {role_str}", status="Success"
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": UserResponse.model_validate(user),
+        "requires_otp": False
+    }
+
+
+# ─────────────────────────────────────────
+# POST /auth/admin/send-otp
+# Existing Admin OTP flow preserved
+# ─────────────────────────────────────────
+@router.post("/admin/send-otp")
+def admin_send_otp(payload: AdminSendOTPRequest, db: Session = Depends(get_db)):
+    """
+    Step 1 of Admin Login:
+    Admin enters email -> specifically looks up Admin account -> sends 6-digit OTP.
+    """
+    user = db.query(User).filter(User.email == payload.email, User.role == "Admin").first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No admin account found with this email address."
+        )
+
+    otp = _generate_otp()
     user.otp_code = otp
-    user.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+    user.otp_expires_at = _otp_expiry()
     db.commit()
 
     send_otp_email(user.email, user.full_name, otp)
 
     return {
-        "requires_otp": True,
+        "message": f"A 6-digit verification code has been sent to {user.email}. It expires in 5 minutes.",
         "email": user.email,
-        "message": "OTP has been sent to your email."
     }
 
 
-# -----------------------------
-# Send / Resend OTP
-# -----------------------------
-@router.post(
-    "/send-otp"
-)
-def send_otp(
-    payload: SendOTPRequest,
-    db: Session = Depends(get_db)
-):
-    user = db.query(User).filter(User.email == payload.email).first()
-    if not user:
+# ─────────────────────────────────────────
+# POST /auth/admin/verify-otp
+# Existing Admin OTP verification preserved
+# ─────────────────────────────────────────
+@router.post("/admin/verify-otp", response_model=TokenWithUser)
+def admin_verify_otp(payload: AdminVerifyOTPRequest, db: Session = Depends(get_db)):
+    """
+    Step 2 of Admin Login:
+    Admin enters 6-digit OTP -> verify against stored OTP -> return JWT token.
+    """
+    if not payload.otp or not payload.otp.strip().isdigit() or len(payload.otp.strip()) != 6:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User not found."
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="OTP must be exactly 6 digits."
         )
 
-    import secrets
-    otp = "".join(secrets.choice("0123456789") for _ in range(6))
-    
-    user.otp_code = otp
-    user.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
-    db.commit()
-
-    send_otp_email(user.email, user.full_name, otp)
-
-    return {"message": "OTP sent successfully."}
-
-
-# -----------------------------
-# Verify OTP & Log In
-# -----------------------------
-@router.post(
-    "/verify-otp",
-    response_model=TokenWithUser
-)
-def verify_otp(
-    payload: VerifyOTPRequest,
-    db: Session = Depends(get_db)
-):
-    user = db.query(User).filter(User.email == payload.email).first()
+    user = db.query(User).filter(User.email == payload.email, User.role == "Admin").first()
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User not found."
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No admin account found for this email address."
         )
 
     if not user.otp_code or user.otp_expires_at is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No OTP requested or OTP has already been verified."
+            detail="No active verification code found. Please request a new code."
         )
 
-    if datetime.now(timezone.utc) > user.otp_expires_at:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OTP has expired. Please request a new code."
-        )
-
-    if user.otp_code != payload.otp:
+    now_utc = datetime.now(timezone.utc)
+    otp_expiry = (
+        user.otp_expires_at.replace(tzinfo=timezone.utc)
+        if user.otp_expires_at.tzinfo is None
+        else user.otp_expires_at
+    )
+    if now_utc > otp_expiry:
+        user.otp_code = None
+        user.otp_expires_at = None
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid OTP code. Please check your email and try again."
+            detail="This verification code has expired. Please request a new code."
         )
 
-    if not user.is_verified:
-        user.is_verified = True
+    if not secrets.compare_digest(user.otp_code.strip(), payload.otp.strip()):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="The verification code you entered is incorrect."
+        )
+
+    user.is_verified = True
     user.otp_code = None
     user.otp_expires_at = None
     db.commit()
 
     access_token = create_access_token(
         data={
-            "sub": user.email
+            "sub": str(user.user_id),
+            "email": user.email,
+            "role": "Admin"
+        }
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": UserResponse.model_validate(user),
+    }
+
+
+# ─────────────────────────────────────────
+# POST /auth/send-otp (generic)
+# ─────────────────────────────────────────
+@router.post("/send-otp")
+def send_otp(payload: SendOTPRequest, db: Session = Depends(get_db)):
+    users = db.query(User).filter(User.email == payload.email).all()
+    if not users:
+        return {"message": f"If an account is registered to {payload.email}, a code has been sent."}
+
+    otp = _generate_otp()
+    expiry = _otp_expiry()
+    for user in users:
+        user.otp_code = otp
+        user.otp_expires_at = expiry
+    db.commit()
+
+    send_otp_email(users[0].email, users[0].full_name, otp)
+    return {"message": f"A new verification code has been sent to {payload.email}."}
+
+
+# ─────────────────────────────────────────
+# POST /auth/verify-otp (generic)
+# ─────────────────────────────────────────
+@router.post("/verify-otp", response_model=TokenWithUser)
+def verify_otp(payload: VerifyOTPRequest, db: Session = Depends(get_db)):
+    if not payload.otp or not payload.otp.strip().isdigit() or len(payload.otp.strip()) != 6:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="OTP must be exactly 6 digits.",
+        )
+
+    users = db.query(User).filter(User.email == payload.email).all()
+    if not users:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No account found for this email address.",
+        )
+
+    user_with_otp = next((u for u in users if u.otp_code and u.otp_expires_at is not None), None)
+    if not user_with_otp:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No active verification code found.",
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    otp_expiry = (
+        user_with_otp.otp_expires_at.replace(tzinfo=timezone.utc)
+        if user_with_otp.otp_expires_at.tzinfo is None
+        else user_with_otp.otp_expires_at
+    )
+    if now_utc > otp_expiry:
+        for u in users:
+            u.otp_code = None
+            u.otp_expires_at = None
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This verification code has expired.",
+        )
+
+    if not secrets.compare_digest(user_with_otp.otp_code.strip(), payload.otp.strip()):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="The verification code you entered is incorrect.",
+        )
+
+    for u in users:
+        u.is_verified = True
+        u.otp_code = None
+        u.otp_expires_at = None
+    db.commit()
+
+    role_val = user_with_otp.role.value if hasattr(user_with_otp.role, "value") else str(user_with_otp.role)
+    access_token = create_access_token(
+        data={
+            "sub": str(user_with_otp.user_id),
+            "email": user_with_otp.email,
+            "role": role_val
         }
     )
 
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": user
+        "user": UserResponse.model_validate(user_with_otp),
     }
 
 
-# -----------------------------
-# Current Logged-in User
-# -----------------------------
-@router.get(
-    "/me",
-    response_model=UserResponse
-)
-def get_profile(
-    current_user: User = Depends(get_current_user)
-):
+# ─────────────────────────────────────────
+# GET /auth/me
+# ─────────────────────────────────────────
+@router.get("/me", response_model=UserResponse)
+def get_profile(current_user: User = Depends(get_current_user)):
     return current_user
-
-
-# -----------------------------
-# Test SMTP Email
-# -----------------------------
-@router.post(
-    "/test-email"
-)
-def test_email(
-    email: str,
-    db: Session = Depends(get_db)
-):
-    import logging
-    import smtplib
-    from email.mime.text import MIMEText
-    from email.mime.multipart import MIMEMultipart
-
-    logger = logging.getLogger(__name__)
-
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "FleetFlow SMTP Connection Test"
-        msg["From"] = f"FleetFlow <{settings.EMAIL_FROM}>"
-        msg["To"] = email
-
-        html = """
-        <html>
-          <body style="font-family: sans-serif; padding: 20px;">
-            <h2>SMTP Test Successful</h2>
-            <p>Your FleetFlow SMTP settings are correctly configured and working!</p>
-          </body>
-        </html>
-        """
-        msg.attach(MIMEText(html, "html"))
-
-        with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as server:
-            server.starttls()
-            server.login(settings.EMAIL_USER, settings.EMAIL_PASSWORD)
-            server.sendmail(settings.EMAIL_FROM, email, msg.as_string())
-
-        logger.info(f"Test email successfully sent to {email}")
-        return {"message": f"SMTP Test email successfully sent to {email}"}
-    except smtplib.SMTPAuthenticationError as e:
-        error_msg = (
-            "SMTP Authentication Failed (535). "
-            f"Please verify your EMAIL_USER ({settings.EMAIL_USER}) and check that "
-            "EMAIL_PASSWORD matches your Google App Password exactly without spaces or quotes."
-        )
-        logger.error(f"{error_msg}. Details: {e}", exc_info=True)
-        print(f"\n[CRITICAL SMTP AUTH ERROR] {error_msg}\n")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_msg
-        )
-    except Exception as e:
-        error_msg = (
-            f"SMTP Connection Failed: {str(e)}. "
-            f"Please check EMAIL_HOST ({settings.EMAIL_HOST}) and EMAIL_PORT ({settings.EMAIL_PORT})."
-        )
-        logger.error(error_msg, exc_info=True)
-        print(f"\n[SMTP CONNECTION ERROR] {error_msg}\n")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_msg
-        )

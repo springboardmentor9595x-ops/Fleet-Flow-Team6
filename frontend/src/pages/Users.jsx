@@ -230,7 +230,6 @@ export default function Users() {
                       <select name="role" value={formData.role} onChange={handleChange} className="ff-select">
                         <option value="Admin">Admin</option>
                         <option value="FleetManager">FleetManager</option>
-                        <option value="Dispatcher">Dispatcher</option>
                         <option value="Driver">Driver</option>
                       </select>
                     </div>

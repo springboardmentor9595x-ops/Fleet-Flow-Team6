@@ -37,14 +37,14 @@ export default function Shipments() {
     status: "Created"
   });
 
-  const isOpsRole = user && ["Admin", "FleetManager", "Dispatcher"].includes(user.role);
+  const isOpsRole = user && ["Admin", "FleetManager"].includes(user.role);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       const [shipmentsRes, driversRes, vehiclesRes] = await Promise.all([
         api.get("/shipments"),
-        api.get("/fleet/drivers"),
+        isOpsRole ? api.get("/fleet/drivers") : Promise.resolve({ data: [] }),
         api.get("/fleet/vehicles")
       ]);
       setShipments(shipmentsRes.data);

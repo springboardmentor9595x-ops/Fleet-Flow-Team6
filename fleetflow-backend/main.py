@@ -1,13 +1,23 @@
 import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.routers.auth import router as auth_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.fleet import router as fleet_router
 from app.routers.shipments import router as shipments_router
 from app.routers.gps import router as gps_router, gps_simulation_loop
+from app.routers.reports import router as reports_router
+from app.routers.fuel import router as fuel_router
+from app.routers.attendance import router as attendance_router
+from app.routers.work_updates import router as work_updates_router
+from app.routers.profile import router as profile_router
+from app.routers.audit import router as audit_router
+from app.routers.dispatcher import router as dispatcher_router
 from config import settings
+from database import engine, Base
+import app.models  # Ensure all models are registered
 
 app = FastAPI(
     title="FleetFlow API",
@@ -27,10 +37,31 @@ app.include_router(dashboard_router)
 app.include_router(fleet_router)
 app.include_router(shipments_router)
 app.include_router(gps_router)
+app.include_router(reports_router)
+app.include_router(fuel_router)
+app.include_router(attendance_router)
+app.include_router(work_updates_router)
+app.include_router(profile_router)
+app.include_router(audit_router)
+app.include_router(dispatcher_router)
 
 
 @app.on_event("startup")
 async def startup_event():
+    # 1. Update PostgreSQL ENUM type if using Postgres
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TYPE role_enum ADD VALUE IF NOT EXISTS 'Dispatcher';"))
+            conn.commit()
+    except Exception as e:
+        print(f"[DB Notice]: PostgreSQL enum alter check: {e}")
+
+    # 2. Ensure database schema tables exist (e.g. audit_logs)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"[DB Warning]: Table creation check: {e}")
+
     # Launch background GPS simulation task
     asyncio.create_task(gps_simulation_loop())
 

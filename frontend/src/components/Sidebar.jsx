@@ -1,63 +1,19 @@
 import { motion } from "framer-motion";
 import {
-  BarChart3, Bell, ChevronLeft, ChevronRight, Fuel,
-  LayoutDashboard, LogOut, Package2, Route, Settings,
-  ShieldCheck, Truck, UserCircle2, Users, Wrench,
+  ChevronLeft, ChevronRight, LogOut, Package2, ShieldCheck,
 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { getNavigationItems } from "../config/permissions";
 
 const linkBase = "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all";
 
 export default function Sidebar({ collapsed, onToggle }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const role = user?.role || "Admin";
+  const role = user?.role || "Driver";
 
-  const items = {
-    Admin: [
-      { label: "Overview",      to: "/admin",         icon: LayoutDashboard },
-      { label: "Shipments",     to: "/shipments",     icon: Package2        },
-      { label: "Users",         to: "/users",         icon: Users           },
-      { label: "Drivers",       to: "/drivers",       icon: UserCircle2     },
-      { label: "Vehicles",      to: "/vehicles",      icon: Truck           },
-      { label: "Trips",         to: "/trips",         icon: Route           },
-      { label: "Reports",       to: "/reports",       icon: BarChart3       },
-      { label: "Maintenance",   to: "/maintenance",   icon: Wrench          },
-      { label: "Notifications", to: "/notifications", icon: Bell            },
-      { label: "Settings",      to: "/settings",      icon: Settings        },
-    ],
-    FleetManager: [
-      { label: "Overview",      to: "/fleet-manager", icon: LayoutDashboard },
-      { label: "Shipments",     to: "/shipments",     icon: Package2        },
-      { label: "Vehicles",      to: "/vehicles",      icon: Truck           },
-      { label: "Drivers",       to: "/drivers",       icon: UserCircle2     },
-      { label: "Trips",         to: "/trips",         icon: Route           },
-      { label: "Maintenance",   to: "/maintenance",   icon: Wrench          },
-      { label: "Fuel",          to: "/reports",       icon: Fuel            },
-      { label: "Notifications", to: "/notifications", icon: Bell            },
-      { label: "Settings",      to: "/settings",      icon: Settings        },
-    ],
-    Driver: [
-      { label: "Overview",      to: "/driver",        icon: LayoutDashboard },
-      { label: "Shipments",     to: "/shipments",     icon: Package2        },
-      { label: "Trips",         to: "/trips",         icon: Route           },
-      { label: "Vehicle",       to: "/vehicles",      icon: Truck           },
-      { label: "History",       to: "/reports",       icon: BarChart3       },
-      { label: "Profile",       to: "/profile",       icon: UserCircle2     },
-      { label: "Notifications", to: "/notifications", icon: Bell            },
-    ],
-    Dispatcher: [
-      { label: "Overview",      to: "/dispatcher",    icon: LayoutDashboard },
-      { label: "Shipments",     to: "/shipments",     icon: Package2        },
-      { label: "Assign Trips",  to: "/trips",         icon: Route           },
-      { label: "Live Tracking", to: "/reports",       icon: BarChart3       },
-      { label: "Requests",      to: "/notifications", icon: Bell            },
-      { label: "Settings",      to: "/settings",      icon: Settings        },
-    ],
-  };
-
-  const currentItems = items[role] || items.Admin;
+  const currentItems = getNavigationItems(role);
 
   const handleLogout = () => {
     logout();

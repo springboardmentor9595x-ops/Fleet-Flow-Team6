@@ -10,9 +10,10 @@ export default function Maintenance() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [editRecord, setEditRecord] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   
-  const [formData, setFormData] = useState({
+  const defaultForm = {
     vehicle_id: "",
     maintenance_type: "",
     service_date: new Date().toISOString().split("T")[0],
@@ -20,7 +21,8 @@ export default function Maintenance() {
     cost: "",
     remarks: "",
     status: "pending"
-  });
+  };
+  const [formData, setFormData] = useState(defaultForm);
 
   const fetchData = async () => {
     try {
@@ -53,19 +55,39 @@ export default function Maintenance() {
     try {
       await api.post("/fleet/maintenance", formData);
       setShowModal(false);
-      setFormData({
-        vehicle_id: "",
-        maintenance_type: "",
-        service_date: new Date().toISOString().split("T")[0],
-        next_service_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-        cost: "",
-        remarks: "",
-        status: "pending"
-      });
+      setFormData(defaultForm);
       fetchData();
     } catch (err) {
       console.error(err);
-      alert("Failed to submit service logs.");
+      alert(err.response?.data?.detail || "Failed to submit service logs.");
+    }
+  };
+
+  const handleEdit = (record) => {
+    setEditRecord(record);
+    setFormData({
+      vehicle_id: record.vehicle_id,
+      maintenance_type: record.maintenance_type,
+      service_date: record.service_date.substring(0, 10),
+      next_service_date: record.next_service_date.substring(0, 10),
+      cost: record.cost,
+      remarks: record.remarks || "",
+      status: record.status
+    });
+    setShowModal(true);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.put(`/fleet/maintenance/${editRecord.maintenance_id}`, formData);
+      setShowModal(false);
+      setEditRecord(null);
+      setFormData(defaultForm);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.detail || "Failed to update maintenance record.");
     }
   };
 
@@ -109,7 +131,7 @@ export default function Maintenance() {
               style={{ paddingLeft: "2.25rem" }}
             />
           </div>
-          <button onClick={() => setShowModal(true)} className="ff-btn-primary">
+          <button onClick={() => { setEditRecord(null); setFormData(defaultForm); setShowModal(true); }} className="ff-btn-primary">
             <Plus size={16} />
             Log Service
           </button>
@@ -200,9 +222,19 @@ export default function Maintenance() {
                       </div>
                     )}
 
-                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "auto", paddingTop: "0.5rem" }}>
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "auto", paddingTop: "0.5rem" }}>
+                      <button 
+                        onClick={() => handleEdit(log)}
+                        title="Edit record"
+                        style={{ background: "transparent", border: "none", color: "#3b82f6", padding: "0.375rem", borderRadius: "0.5rem", cursor: "pointer", display: "flex", alignItems: "center", transition: "background 0.2s" }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = "#eff6ff"}
+                        onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                      >
+                        <PenSquare size={15} />
+                      </button>
                       <button 
                         onClick={() => handleDelete(log.maintenance_id)}
+                        title="Delete record"
                         style={{ background: "transparent", border: "none", color: "#e11d48", padding: "0.375rem", borderRadius: "0.5rem", cursor: "pointer", display: "flex", alignItems: "center", transition: "background 0.2s" }}
                         onMouseEnter={(e) => e.currentTarget.style.background = "#fff1f2"}
                         onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
@@ -235,11 +267,11 @@ export default function Maintenance() {
                 style={{ position: "relative", width: "100%", maxWidth: "480px", background: "white", borderRadius: "1.25rem", padding: "1.5rem", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1)", zIndex: 101, display: "flex", flexDirection: "column", gap: "1.25rem" }}
               >
                 <div>
-                  <h3 style={{ fontSize: "1.125rem", fontWeight: 700, color: "#0f172a" }}>Log Service Checkup</h3>
-                  <p style={{ fontSize: "0.8125rem", color: "#64748b" }}>Record mechanical checks, part replacements, and overall service costs</p>
+                  <h3 style={{ fontSize: "1.125rem", fontWeight: 700, color: "#0f172a" }}>{editRecord ? "Edit Maintenance Record" : "Log Service Checkup"}</h3>
+                  <p style={{ fontSize: "0.8125rem", color: "#64748b" }}>{editRecord ? "Update service details and status for this maintenance entry" : "Record mechanical checks, part replacements, and overall service costs"}</p>
                 </div>
 
-                <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <form onSubmit={editRecord ? handleEditSubmit : handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                   <div>
                     <label className="ff-label">Select Vehicle</label>
                     <select name="vehicle_id" required value={formData.vehicle_id} onChange={handleChange} className="ff-select">

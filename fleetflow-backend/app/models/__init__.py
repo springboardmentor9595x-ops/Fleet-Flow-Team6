@@ -8,6 +8,7 @@ from app.models.maintenance import VehicleMaintenance
 from app.models.fuel_record import FuelRecord
 from app.models.notification import Notification
 from app.models.attendance import Attendance
+from app.models.audit_log import AuditLog
 
 __all__ = [
     "User",
@@ -21,4 +22,5 @@ __all__ = [
     "FuelRecord",
     "Notification",
     "Attendance",
+    "AuditLog",
 ]

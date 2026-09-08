@@ -1,17 +1,21 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Truck, Plus, Trash2, Fuel, Weight, Check, Search, AlertCircle, UserCheck } from "lucide-react";
+import { Truck, Plus, Trash2, Fuel, Weight, Check, Search, AlertCircle, UserCheck, PenSquare } from "lucide-react";
 import AppLayout from "../layouts/AppLayout";
 import api from "../api/axios";
+import { useAuth } from "../context/AuthContext";
 
 export default function Vehicles() {
+  const { user } = useAuth();
+  const isOpsRole = user && ["Admin", "FleetManager"].includes(user.role);
   const [vehicles, setVehicles] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({
+  const [editVehicle, setEditVehicle] = useState(null);
+  const defaultForm = {
     registration_number: "",
     vehicle_type: "Cargo Van",
     brand: "",
@@ -21,14 +25,15 @@ export default function Vehicles() {
     capacity: "",
     assigned_driver: "",
     status: "Available"
-  });
+  };
+  const [formData, setFormData] = useState(defaultForm);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       const [vehiclesRes, driversRes] = await Promise.all([
         api.get("/fleet/vehicles"),
-        api.get("/fleet/drivers")
+        isOpsRole ? api.get("/fleet/drivers") : Promise.resolve({ data: [] })
       ]);
       setVehicles(vehiclesRes.data);
       setDrivers(driversRes.data.filter(d => d.status === "Active"));
@@ -54,21 +59,41 @@ export default function Vehicles() {
     try {
       await api.post("/fleet/vehicles", formData);
       setShowModal(false);
-      setFormData({
-        registration_number: "",
-        vehicle_type: "Cargo Van",
-        brand: "",
-        model: "",
-        manufacture_year: new Date().getFullYear(),
-        fuel_type: "Diesel",
-        capacity: "",
-        assigned_driver: "",
-        status: "Available"
-      });
+      setFormData(defaultForm);
       fetchData();
     } catch (err) {
       console.error(err);
-      alert("Failed to register vehicle.");
+      alert(err.response?.data?.detail || "Failed to register vehicle.");
+    }
+  };
+
+  const handleEdit = (vehicle) => {
+    setEditVehicle(vehicle);
+    setFormData({
+      registration_number: vehicle.registration_number,
+      vehicle_type: vehicle.vehicle_type,
+      brand: vehicle.brand,
+      model: vehicle.model,
+      manufacture_year: vehicle.manufacture_year,
+      fuel_type: vehicle.fuel_type,
+      capacity: vehicle.capacity,
+      assigned_driver: vehicle.assigned_driver || "",
+      status: vehicle.status
+    });
+    setShowModal(true);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.put(`/fleet/vehicles/${editVehicle.vehicle_id}`, formData);
+      setShowModal(false);
+      setEditVehicle(null);
+      setFormData(defaultForm);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.detail || "Failed to update vehicle.");
     }
   };
 
@@ -116,10 +141,12 @@ export default function Vehicles() {
               style={{ paddingLeft: "2.25rem" }}
             />
           </div>
-          <button onClick={() => setShowModal(true)} className="ff-btn-primary">
-            <Plus size={16} />
-            Add Vehicle
-          </button>
+          {isOpsRole && (
+            <button onClick={() => { setEditVehicle(null); setFormData(defaultForm); setShowModal(true); }} className="ff-btn-primary">
+              <Plus size={16} />
+              Add Vehicle
+            </button>
+          )}
         </div>
 
         {/* Vehicles grid */}
@@ -192,14 +219,28 @@ export default function Vehicles() {
                     <span style={{ fontSize: "0.75rem", color: "#94a3b8", fontWeight: 500 }}>
                       Type: {vehicle.vehicle_type}
                     </span>
-                    <button 
-                      onClick={() => handleDelete(vehicle.vehicle_id)}
-                      style={{ background: "transparent", border: "none", color: "#e11d48", padding: "0.375rem", borderRadius: "0.5rem", cursor: "pointer", display: "flex", alignItems: "center", transition: "background 0.2s" }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = "#fff1f2"}
-                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                    {isOpsRole && (
+                      <div style={{ display: "flex", gap: "0.25rem" }}>
+                        <button 
+                          onClick={() => handleEdit(vehicle)}
+                          title="Edit vehicle"
+                          style={{ background: "transparent", border: "none", color: "#3b82f6", padding: "0.375rem", borderRadius: "0.5rem", cursor: "pointer", display: "flex", alignItems: "center", transition: "background 0.2s" }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = "#eff6ff"}
+                          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                        >
+                          <PenSquare size={15} />
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(vehicle.vehicle_id)}
+                          title="Delete vehicle"
+                          style={{ background: "transparent", border: "none", color: "#e11d48", padding: "0.375rem", borderRadius: "0.5rem", cursor: "pointer", display: "flex", alignItems: "center", transition: "background 0.2s" }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = "#fff1f2"}
+                          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               ))}
@@ -225,11 +266,11 @@ export default function Vehicles() {
                 style={{ position: "relative", width: "100%", maxWidth: "480px", background: "white", borderRadius: "1.25rem", padding: "1.5rem", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1)", zIndex: 101, display: "flex", flexDirection: "column", gap: "1.25rem" }}
               >
                 <div>
-                  <h3 style={{ fontSize: "1.125rem", fontWeight: 700, color: "#0f172a" }}>Add Vehicle Profile</h3>
-                  <p style={{ fontSize: "0.8125rem", color: "#64748b" }}>Register truck or van structural specs and crew assignment</p>
+                  <h3 style={{ fontSize: "1.125rem", fontWeight: 700, color: "#0f172a" }}>{editVehicle ? "Edit Vehicle" : "Add Vehicle Profile"}</h3>
+                  <p style={{ fontSize: "0.8125rem", color: "#64748b" }}>{editVehicle ? "Update vehicle specifications and assignment" : "Register truck or van structural specs and crew assignment"}</p>
                 </div>
 
-                <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <form onSubmit={editVehicle ? handleEditSubmit : handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                     <div>
                       <label className="ff-label">Registration No.</label>

@@ -17,15 +17,28 @@ router = APIRouter(
 @router.get("/summary")
 def get_summary(db: Session = Depends(get_db)):
     total_vehicles = db.query(Vehicle).count()
-    active_trips = db.query(Trip).filter(Trip.status == "active").count()
-    maintenance_due = db.query(Vehicle).filter(Vehicle.status == "Maintenance").count()
+    active_trips = db.query(Trip).filter(
+        func.lower(Trip.status).in_(["active", "scheduled", "assigned", "dispatched", "in transit"])
+    ).count()
+    maintenance_due = db.query(Vehicle).filter(func.lower(Vehicle.status) == "maintenance").count()
+
+    # Drivers Present Today
+    from app.models.attendance import Attendance
+    today_date = datetime.date.today()
+    drivers_present = db.query(Attendance).filter(
+        Attendance.date == today_date,
+        Attendance.status == "Present"
+    ).count()
+    total_drivers_cnt = db.query(Driver).count()
     
     # 1. Total Vehicles Delta: new vehicles added in the last 7 days
-    new_vehicles = db.query(Vehicle).filter(Vehicle.created_at >= func.now() - text("INTERVAL '7 days'")).count()
+    from datetime import timedelta
+    seven_days_ago = datetime.datetime.now(datetime.timezone.utc) - timedelta(days=7)
+    new_vehicles = db.query(Vehicle).filter(Vehicle.created_at >= seven_days_ago).count()
     vehicle_delta = f"+{new_vehicles} this week" if new_vehicles > 0 else f"{new_vehicles} this week"
     
     # 2. Active Trips Delta: count of pending trips
-    pending_trips = db.query(Trip).filter(Trip.status == "pending").count()
+    pending_trips = db.query(Trip).filter(func.lower(Trip.status).in_(["pending", "created", "draft"])).count()
     trips_delta = f"{pending_trips} pending"
     
     # 3. Maintenance Due Delta: count of overdue maintenance tasks
@@ -38,7 +51,7 @@ def get_summary(db: Session = Depends(get_db)):
     maintenance_delta = f"{overdue_maintenance} overdue"
     
     # 4. On-Time Rate: calculate dynamically for completed trips
-    completed_trips = db.query(Trip).filter(Trip.status == "completed").all()
+    completed_trips = db.query(Trip).filter(func.lower(Trip.status) == "completed").all()
     on_time_count = 0
     for trip in completed_trips:
         if trip.start_time and trip.end_time and trip.distance:
@@ -76,6 +89,16 @@ def get_summary(db: Session = Depends(get_db)):
             "color": "#3b82f6",
             "bg": "#eff6ff",
             "border": "#bfdbfe"
+        },
+        {
+            "label": "Drivers Present",
+            "value": f"{drivers_present}/{total_drivers_cnt}",
+            "delta": f"{drivers_present} checked in today",
+            "positive": True,
+            "icon": "Users",
+            "color": "#10b981",
+            "bg": "#ecfdf5",
+            "border": "#a7f3d0"
         },
         {
             "label": "Active Trips",

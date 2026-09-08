@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, Shield, Plus, Trash2, Phone, Mail, FileText, UserPlus, Search, AlertCircle } from "lucide-react";
+import { User, Shield, Plus, Trash2, Phone, Mail, FileText, UserPlus, Search, AlertCircle, PenSquare } from "lucide-react";
 import AppLayout from "../layouts/AppLayout";
 import api from "../api/axios";
 
@@ -10,7 +10,8 @@ export default function Drivers() {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({
+  const [editDriver, setEditDriver] = useState(null);
+  const defaultForm = {
     full_name: "",
     email: "",
     phone: "",
@@ -18,7 +19,8 @@ export default function Drivers() {
     experience_years: "",
     address: "",
     status: "Active"
-  });
+  };
+  const [formData, setFormData] = useState(defaultForm);
 
   const fetchDrivers = async () => {
     try {
@@ -28,7 +30,7 @@ export default function Drivers() {
       setError(null);
     } catch (err) {
       console.error(err);
-      setError("Failed to fetch drivers list.");
+      setError(err.response?.data?.detail || "Failed to fetch drivers list.");
     } finally {
       setLoading(false);
     }
@@ -47,19 +49,39 @@ export default function Drivers() {
     try {
       await api.post("/fleet/drivers", formData);
       setShowModal(false);
-      setFormData({
-        full_name: "",
-        email: "",
-        phone: "",
-        license_number: "",
-        experience_years: "",
-        address: "",
-        status: "Active"
-      });
+      setFormData(defaultForm);
       fetchDrivers();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.detail || "Failed to create driver profile.");
+    }
+  };
+
+  const handleEdit = (driver) => {
+    setEditDriver(driver);
+    setFormData({
+      full_name: driver.full_name,
+      email: driver.email,
+      phone: driver.phone || "",
+      license_number: driver.license_number,
+      experience_years: driver.experience_years || "",
+      address: driver.address || "",
+      status: driver.status || "Active"
+    });
+    setShowModal(true);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.put(`/fleet/drivers/${editDriver.driver_id}`, formData);
+      setShowModal(false);
+      setEditDriver(null);
+      setFormData(defaultForm);
+      fetchDrivers();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.detail || "Failed to update driver profile.");
     }
   };
 
@@ -97,7 +119,7 @@ export default function Drivers() {
               style={{ paddingLeft: "2.25rem" }}
             />
           </div>
-          <button onClick={() => setShowModal(true)} className="ff-btn-primary">
+          <button onClick={() => { setEditDriver(null); setFormData(defaultForm); setShowModal(true); }} className="ff-btn-primary">
             <UserPlus size={16} />
             Add Driver
           </button>
@@ -171,9 +193,19 @@ export default function Drivers() {
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "auto", paddingTop: "0.5rem" }}>
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.375rem", marginTop: "auto", paddingTop: "0.5rem" }}>
+                    <button 
+                      onClick={() => handleEdit(driver)}
+                      title="Edit driver"
+                      style={{ background: "transparent", border: "none", color: "#3b82f6", padding: "0.375rem", borderRadius: "0.5rem", cursor: "pointer", display: "flex", alignItems: "center", transition: "background 0.2s" }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = "#eff6ff"}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                    >
+                      <PenSquare size={15} />
+                    </button>
                     <button 
                       onClick={() => handleDelete(driver.driver_id)}
+                      title="Delete driver"
                       style={{ background: "transparent", border: "none", color: "#e11d48", padding: "0.375rem", borderRadius: "0.5rem", cursor: "pointer", display: "flex", alignItems: "center", transition: "background 0.2s" }}
                       onMouseEnter={(e) => e.currentTarget.style.background = "#fff1f2"}
                       onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
@@ -205,11 +237,11 @@ export default function Drivers() {
                 style={{ position: "relative", width: "100%", maxWidth: "480px", background: "white", borderRadius: "1.25rem", padding: "1.5rem", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1)", zIndex: 101, display: "flex", flexDirection: "column", gap: "1.25rem" }}
               >
                 <div>
-                  <h3 style={{ fontSize: "1.125rem", fontWeight: 700, color: "#0f172a" }}>Register New Driver</h3>
-                  <p style={{ fontSize: "0.8125rem", color: "#64748b" }}>Create user credentials and system driver profile</p>
+                  <h3 style={{ fontSize: "1.125rem", fontWeight: 700, color: "#0f172a" }}>{editDriver ? "Edit Driver Profile" : "Register New Driver"}</h3>
+                  <p style={{ fontSize: "0.8125rem", color: "#64748b" }}>{editDriver ? "Update driver details and license information" : "Create user credentials and system driver profile"}</p>
                 </div>
 
-                <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <form onSubmit={editDriver ? handleEditSubmit : handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                   <div>
                     <label className="ff-label">Full Name</label>
                     <input type="text" name="full_name" required value={formData.full_name} onChange={handleChange} className="ff-input" placeholder="e.g. Marcus Lee" />
@@ -217,7 +249,7 @@ export default function Drivers() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                     <div>
                       <label className="ff-label">Email Address</label>
-                      <input type="email" name="email" required value={formData.email} onChange={handleChange} className="ff-input" placeholder="marcus@example.com" />
+                      <input type="email" name="email" required={!editDriver} disabled={!!editDriver} value={formData.email} onChange={handleChange} className="ff-input" placeholder="marcus@example.com" style={editDriver ? { opacity: 0.5, cursor: "not-allowed" } : {}} />
                     </div>
                     <div>
                       <label className="ff-label">Phone Number</label>
@@ -248,7 +280,7 @@ export default function Drivers() {
 
                   <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "0.5rem" }}>
                     <button type="button" onClick={() => setShowModal(false)} className="ff-btn-ghost">Cancel</button>
-                    <button type="submit" className="ff-btn-primary">Register Driver</button>
+                    <button type="submit" className="ff-btn-primary">{editDriver ? "Save Changes" : "Register Driver"}</button>
                   </div>
                 </form>
               </motion.div>
