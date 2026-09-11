@@ -19,7 +19,10 @@ from app.schemas.user import (
 from app.crud.user import (
     get_user_by_email,
     get_user_by_verification_token,
-    create_user,
+    create_or_update_unverified_user,
+    create_email_verification,
+    get_latest_email_verification,
+    verify_email_otp,
     set_user_otp,
     verify_user_otp,
     verify_user_email,
@@ -29,7 +32,12 @@ from app.crud.user import (
 from app.core.security import verify_password, create_access_token
 from app.core.deps import get_current_user, require_role
 from app.models.user import User, RoleEnum
-from app.services.email_service import send_otp_email, send_verification_email
+from app.services.email_service import (
+    send_otp_email,
+    send_verification_email,
+    EmailConfigurationError,
+    EmailDeliveryError,
+)
 
 router = APIRouter()
 
@@ -41,15 +49,41 @@ router = APIRouter()
 def signup(user_in: UserCreate, db: Session = Depends(get_db)):
     clean_email = user_in.email.strip().lower()
 
-    if get_user_by_email(db, clean_email):
+    existing_user = get_user_by_email(db, clean_email)
+    if existing_user and (existing_user.email_verified or existing_user.is_email_verified):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
+            detail="Email already registered. Please log in.",
         )
 
     otp = generate_otp()
 
-    user = create_user(
+    # Step 1: Send verification email first.
+    # Do NOT report success if email sending fails.
+    try:
+        send_otp_email(
+            to_email=clean_email,
+            full_name=user_in.full_name,
+            otp=otp,
+        )
+    except EmailConfigurationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+    except EmailDeliveryError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unable to send verification email. {str(e)}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to deliver verification email: {str(e)}",
+        )
+
+    # Step 2: Persist user and OTP record only after email sending succeeded
+    user = create_or_update_unverified_user(
         db=db,
         email=clean_email,
         password=user_in.password,
@@ -58,23 +92,14 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
         role=user_in.role,
         otp=otp,
     )
+    create_email_verification(db, clean_email, otp)
 
-    print(f"[SIGNUP] User created: {user.email} (OTP: {otp})")
-
-    # Send verification email with 6-digit OTP
-    email_sent = send_otp_email(
-        to_email=user.email,
-        full_name=user.full_name,
-        otp=otp,
-    )
-
-    if not email_sent:
-        print(f"[WARN] SMTP delivery failed or not configured. OTP for {user.email}: {otp}")
+    print(f"[SIGNUP] User successfully registered: {user.email}")
 
     return SignupResponse(
         message="Verification OTP sent to your email.",
         email=user.email,
-        debug_otp=otp if not email_sent else None,
+        debug_otp=None,
     )
 
 
@@ -86,31 +111,26 @@ def verify_otp_endpoint(body: VerifyOtpRequest, db: Session = Depends(get_db)):
     clean_email = body.email.strip().lower()
     clean_otp = body.otp.strip()
 
-    user = get_user_by_email(db, clean_email)
-    if not user:
+    if not clean_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User not found.",
+            detail="Email address is required.",
         )
 
-    if user.is_email_verified or user.email_verified:
-        return MessageResponse(message="Email is already verified. You can log in.")
-
-    if not user.verification_otp or user.verification_otp != clean_otp:
+    if len(clean_otp) != 6:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid OTP. Please try again.",
+            detail="Please enter the complete 6-digit OTP.",
         )
 
-    if user.verification_otp_expires_at and datetime.utcnow() > user.verification_otp_expires_at:
+    success, message = verify_email_otp(db, clean_email, clean_otp)
+    if not success:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OTP has expired. Please request a new OTP.",
+            detail=message,
         )
 
-    verify_user_otp(db, user)
-
-    return MessageResponse(message="Email verified successfully")
+    return MessageResponse(message=message)
 
 
 # ---------------------------------------------------------------------------
@@ -131,32 +151,45 @@ def resend_otp_endpoint(body: ResendOtpRequest, db: Session = Depends(get_db)):
         return MessageResponse(message="Email is already verified. You can log in.")
 
     # Rate limiting: 60-second cooldown
-    # Since new OTP has 10 min (600s) expiry, if remaining expiry > 9 min (540s), user requested < 60s ago
-    if user.verification_otp_expires_at:
-        seconds_remaining_in_validity = (user.verification_otp_expires_at - datetime.utcnow()).total_seconds()
-        # If issued less than 60s ago:
-        if seconds_remaining_in_validity > 540:
-            wait_seconds = int(seconds_remaining_in_validity - 540)
+    latest_rec = get_latest_email_verification(db, clean_email)
+    if latest_rec:
+        elapsed_seconds = (datetime.utcnow() - latest_rec.created_at).total_seconds()
+        if elapsed_seconds < 60:
+            wait_seconds = int(60 - elapsed_seconds)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Resend OTP available after {wait_seconds} seconds.",
             )
 
-    new_otp = set_user_otp(db, user)
-    print(f"[RESEND-OTP] New OTP for {user.email}: {new_otp}")
+    new_otp = generate_otp()
 
-    email_sent = send_otp_email(
-        to_email=user.email,
-        full_name=user.full_name,
-        otp=new_otp,
-    )
+    try:
+        send_otp_email(
+            to_email=user.email,
+            full_name=user.full_name,
+            otp=new_otp,
+        )
+    except EmailConfigurationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+    except EmailDeliveryError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unable to send verification email. {str(e)}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to deliver verification email: {str(e)}",
+        )
 
-    if not email_sent:
-        print(f"[WARN] SMTP delivery failed or not configured. New OTP for {user.email}: {new_otp}")
+    set_user_otp(db, user, new_otp)
 
     return MessageResponse(
         message="A new verification OTP has been sent to your email.",
-        debug_otp=new_otp if not email_sent else None,
+        debug_otp=None,
     )
 
 

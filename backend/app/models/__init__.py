@@ -8,3 +8,4 @@ from .maintenance import VehicleMaintenance
 from .fuel_record import FuelRecord
 from .notification import Notification
 from .attendance import Attendance
+from .email_verification import EmailVerification

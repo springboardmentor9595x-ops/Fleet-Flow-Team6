@@ -28,8 +28,8 @@ export default function SignupForm() {
       setLoading(true);
       const res = await signup(formData);
       const targetEmail = res?.email || formData.email.trim();
-      // Navigate to OTP verification page immediately passing email (+ debug_otp if SMTP failed)
-      navigate("/verify-email", { state: { email: targetEmail, debug_otp: res?.debug_otp || null } });
+      // Navigate to OTP verification page immediately passing email
+      navigate("/verify-email", { state: { email: targetEmail } });
     } catch (err) {
       const detail = err?.response?.data?.detail;
       if (Array.isArray(detail)) {

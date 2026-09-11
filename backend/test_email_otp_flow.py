@@ -1,12 +1,16 @@
 import sys
 import uuid
+from unittest.mock import patch
 from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
 from app.main import app
 from app.database import SessionLocal
 from app.models.user import User
+from app.models.email_verification import EmailVerification
+from app.crud.user import hash_otp
 
 client = TestClient(app)
+
 
 def run_tests():
     print("=" * 60)
@@ -15,40 +19,67 @@ def run_tests():
 
     db = SessionLocal()
     try:
-        # Clean up test users if they exist
         test_email_1 = f"test_otp_user_{uuid.uuid4().hex[:6]}@example.com"
-        test_email_2 = f"test_unverified_{uuid.uuid4().hex[:6]}@example.com"
+        test_unverified = f"test_unverified_{uuid.uuid4().hex[:6]}@example.com"
 
         # -------------------------------------------------------------
-        # TEST 1: SIGNUP AND VERIFY EMAIL WITH OTP
+        # TEST 0: NO FAKE SUCCESS — UNCONFIGURED SMTP RETURNS 500
         # -------------------------------------------------------------
-        print("\n[TEST 1] Testing New User Signup...")
-        signup_payload = {
-            "email": test_email_1,
-            "password": "Password123!",
-            "full_name": "Test OTP User",
-            "phone": "+1234567890",
-            "role": "Driver",
-        }
-        res = client.post("/auth/signup", json=signup_payload)
-        assert res.status_code == 201, f"Signup failed: {res.text}"
-        signup_data = res.json()
-        assert "email" in signup_data and signup_data["email"] == test_email_1.lower()
-        print("  -> User signed up successfully:", signup_data)
+        print("\n[TEST 0] Testing Signup when SMTP credentials are placeholder / unconfigured...")
+        with patch("app.services.email_service.get_smtp_config", return_value=("smtp.gmail.com", 587, "", "", "", "FleetFlow")):
+            res_fail = client.post(
+                "/auth/signup",
+                json={
+                    "email": test_email_1,
+                    "password": "Password123!",
+                    "full_name": "Test User",
+                    "phone": "+1234567890",
+                    "role": "Driver",
+                },
+            )
+            assert res_fail.status_code == 500, f"Expected 500 when SMTP unconfigured, got {res_fail.status_code}: {res_fail.text}"
+            assert "SMTP" in res_fail.json()["detail"] or "email" in res_fail.json()["detail"].lower()
+            print("  -> Correctly blocked fake success and returned 500:", res_fail.json()["detail"][:80] + "...")
 
-        # Inspect database for generated OTP
+        # -------------------------------------------------------------
+        # TEST 1: SIGNUP WITH MOCKED SUCCESSFUL SMTP DELIVERY
+        # -------------------------------------------------------------
+        print("\n[TEST 1] Testing Signup with Active SMTP Delivery...")
+        with patch("app.routers.auth.send_otp_email", return_value=True):
+            res = client.post(
+                "/auth/signup",
+                json={
+                    "email": test_email_1,
+                    "password": "Password123!",
+                    "full_name": "Test OTP User",
+                    "phone": "+1234567890",
+                    "role": "Driver",
+                },
+            )
+            assert res.status_code == 201, f"Signup failed: {res.text}"
+            signup_data = res.json()
+            assert signup_data["email"] == test_email_1.lower()
+            assert signup_data.get("debug_otp") is None, "debug_otp should never be exposed in response!"
+            print("  -> User signed up successfully:", signup_data)
+
+        # Inspect database for user and email_verifications record
         user_in_db = db.query(User).filter(User.email == test_email_1.lower()).first()
         assert user_in_db is not None, "User not found in database!"
-        assert user_in_db.is_email_verified is False, "User should be unverified after signup"
-        assert user_in_db.verification_otp is not None and len(user_in_db.verification_otp) == 6, "OTP should be 6 digits"
-        assert user_in_db.verification_otp_expires_at is not None, "OTP expiry should be set"
-        valid_otp = user_in_db.verification_otp
-        print(f"  -> Generated 6-digit OTP in DB: {valid_otp}")
+        assert user_in_db.email_verified is False, "User should be unverified after signup"
+
+        verif_rec = (
+            db.query(EmailVerification)
+            .filter(EmailVerification.email == test_email_1.lower(), EmailVerification.verified == False)
+            .first()
+        )
+        assert verif_rec is not None, "EmailVerification record not found in database!"
+        assert len(verif_rec.otp_hash) == 64, "OTP should be stored as SHA-256 hash (64 hex characters)"
+        print(f"  -> Found EmailVerification record. Salted SHA-256 hash: {verif_rec.otp_hash[:16]}...")
 
         # -------------------------------------------------------------
-        # TEST 5: UNVERIFIED USER CANNOT LOGIN (EXPECT 403)
+        # TEST 2: UNVERIFIED USER CANNOT LOGIN (EXPECT 403)
         # -------------------------------------------------------------
-        print("\n[TEST 5] Attempting Login with Unverified Email (Expect 403)...")
+        print("\n[TEST 2] Attempting Login with Unverified Email (Expect 403)...")
         login_res = client.post(
             "/auth/login",
             data={"username": test_email_1, "password": "Password123!"},
@@ -56,68 +87,86 @@ def run_tests():
         )
         assert login_res.status_code == 403, f"Expected 403 for unverified user, got {login_res.status_code}: {login_res.text}"
         assert "verify your email" in login_res.json()["detail"].lower()
-        print("  -> Correctly blocked login with 403:", login_res.json())
+        print("  -> Correctly blocked unverified login with 403:", login_res.json()["detail"])
 
         # -------------------------------------------------------------
-        # TEST 2: WRONG OTP (EXPECT 400)
+        # TEST 3: WRONG OTP (EXPECT 400)
         # -------------------------------------------------------------
-        print("\n[TEST 2] Testing Invalid OTP Submission (Expect 400)...")
+        print("\n[TEST 3] Testing Invalid OTP Submission (Expect 400)...")
         wrong_res = client.post("/auth/verify-email", json={"email": test_email_1, "otp": "000000"})
         assert wrong_res.status_code == 400, f"Expected 400 for wrong OTP, got {wrong_res.status_code}: {wrong_res.text}"
         assert "Invalid OTP" in wrong_res.json()["detail"]
-        print("  -> Correctly rejected invalid OTP:", wrong_res.json())
+        db.refresh(verif_rec)
+        assert verif_rec.attempts == 1, f"Expected attempts = 1, got {verif_rec.attempts}"
+        print("  -> Correctly rejected invalid OTP and incremented attempts count to 1:", wrong_res.json())
 
         # -------------------------------------------------------------
-        # TEST 3: EXPIRED OTP (EXPECT 400)
+        # TEST 4: EXPIRED OTP (EXPECT 400)
         # -------------------------------------------------------------
-        print("\n[TEST 3] Testing Expired OTP Submission (Expect 400)...")
-        # Artificially expire the OTP
-        user_in_db.verification_otp_expires_at = datetime.utcnow() - timedelta(minutes=1)
+        print("\n[TEST 4] Testing Expired OTP Submission (Expect 400)...")
+        verif_rec.expires_at = datetime.utcnow() - timedelta(minutes=1)
         db.commit()
 
-        expired_res = client.post("/auth/verify-email", json={"email": test_email_1, "otp": valid_otp})
+        expired_res = client.post("/auth/verify-email", json={"email": test_email_1, "otp": "123456"})
         assert expired_res.status_code == 400, f"Expected 400 for expired OTP, got {expired_res.status_code}: {expired_res.text}"
         assert "expired" in expired_res.json()["detail"].lower()
         print("  -> Correctly rejected expired OTP:", expired_res.json())
 
         # -------------------------------------------------------------
-        # TEST 4: RESEND OTP & COOLDOWN
+        # TEST 5: RESEND OTP & COOLDOWN
         # -------------------------------------------------------------
-        print("\n[TEST 4] Testing Resend OTP...")
-        resend_res = client.post("/auth/resend-otp", json={"email": test_email_1})
-        assert resend_res.status_code == 200, f"Resend OTP failed: {resend_res.text}"
-        print("  -> Resend OTP successful:", resend_res.json())
+        print("\n[TEST 5] Testing Resend OTP & Cooldown...")
+        with patch("app.routers.auth.send_otp_email", return_value=True):
+            # Attempt to resend immediately (should hit cooldown 429)
+            cooldown_res = client.post("/auth/resend-otp", json={"email": test_email_1})
+            assert cooldown_res.status_code == 429, f"Expected 429 for rapid resend, got {cooldown_res.status_code}: {cooldown_res.text}"
+            print("  -> Rapid resend correctly blocked by 60s cooldown (429):", cooldown_res.json())
 
-        # Verify new OTP generated
-        db.refresh(user_in_db)
-        new_otp = user_in_db.verification_otp
-        assert new_otp is not None and len(new_otp) == 6
-        print(f"  -> New OTP in DB: {new_otp}")
+            # Now artificially expire cooldown by moving created_at back by 65s
+            verif_rec.created_at = datetime.utcnow() - timedelta(seconds=65)
+            db.commit()
 
-        # Test cooldown rate-limiting (<60 seconds)
-        cooldown_res = client.post("/auth/resend-otp", json={"email": test_email_1})
-        assert cooldown_res.status_code == 429, f"Expected 429 for rapid resend, got {cooldown_res.status_code}: {cooldown_res.text}"
-        print("  -> Rate-limit cooldown enforced (429):", cooldown_res.json())
+            # Resend after cooldown
+            resend_res = client.post("/auth/resend-otp", json={"email": test_email_1})
+            assert resend_res.status_code == 200, f"Resend OTP failed after cooldown: {resend_res.text}"
+            print("  -> Resend OTP after cooldown successful (200):", resend_res.json())
+
+            # Immediate resend again should hit 429
+            cooldown_res2 = client.post("/auth/resend-otp", json={"email": test_email_1})
+            assert cooldown_res2.status_code == 429, f"Expected 429 after resend, got {cooldown_res2.status_code}: {cooldown_res2.text}"
+            print("  -> Rate-limit cooldown enforced again (429):", cooldown_res2.json())
 
         # -------------------------------------------------------------
-        # TEST 1 CONT.: SUBMIT VALID OTP
+        # TEST 6: SUBMIT VALID OTP
         # -------------------------------------------------------------
-        print("\n[TEST 1 Cont.] Submitting Valid OTP...")
-        verify_res = client.post("/auth/verify-email", json={"email": test_email_1, "otp": new_otp})
+        print("\n[TEST 6] Submitting Valid OTP...")
+        # For testing, generate known OTP and set in active verification record
+        known_otp = "852963"
+        new_rec = (
+            db.query(EmailVerification)
+            .filter(EmailVerification.email == test_email_1.lower(), EmailVerification.verified == False)
+            .order_by(EmailVerification.created_at.desc())
+            .first()
+        )
+        assert new_rec is not None
+        new_rec.otp_hash = hash_otp(test_email_1.lower(), known_otp)
+        db.commit()
+
+        verify_res = client.post("/auth/verify-email", json={"email": test_email_1, "otp": known_otp})
         assert verify_res.status_code == 200, f"Valid OTP verification failed: {verify_res.text}"
         print("  -> Email verified successfully:", verify_res.json())
 
-        # Check DB state
         db.refresh(user_in_db)
+        db.refresh(new_rec)
+        assert user_in_db.email_verified is True
         assert user_in_db.is_email_verified is True
-        assert user_in_db.verification_otp is None
-        assert user_in_db.verification_otp_expires_at is None
-        print("  -> DB user marked as is_email_verified = True and OTP cleared.")
+        assert new_rec.verified is True
+        print("  -> DB user confirmed verified: email_verified=True, record.verified=True.")
 
         # -------------------------------------------------------------
-        # TEST 1 CONT.: LOGIN VERIFIED USER & ACCESS PROTECTED ROUTE
+        # TEST 7: LOGIN VERIFIED USER
         # -------------------------------------------------------------
-        print("\n[TEST 1 Cont.] Logging in Verified User...")
+        print("\n[TEST 7] Logging in Verified User...")
         login_res = client.post(
             "/auth/login",
             data={"username": test_email_1, "password": "Password123!"},
@@ -134,36 +183,13 @@ def run_tests():
         assert me_res.status_code == 200, f"Protected /users/me failed: {me_res.text}"
         print("  -> Protected profile accessed successfully:", me_res.json())
 
-        # -------------------------------------------------------------
-        # TEST 6: EXISTING VERIFIED USER
-        # -------------------------------------------------------------
-        print("\n[TEST 6] Testing Existing Verified User Login (admin@fleetflow.com)...")
-        admin_login = client.post(
-            "/auth/login",
-            data={"username": "admin@fleetflow.com", "password": "password123"},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        if admin_login.status_code != 200:
-            # Check with default test password if different
-            admin_login = client.post(
-                "/auth/login",
-                data={"username": "admin@fleetflow.com", "password": "password"},
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-
-        print(f"  -> Existing admin login response code: {admin_login.status_code}")
-        if admin_login.status_code == 200:
-            adm_token = admin_login.json()["access_token"]
-            dash_res = client.get("/dashboard/summary", headers={"Authorization": f"Bearer {adm_token}"})
-            assert dash_res.status_code == 200
-            print("  -> Dashboard summary accessed successfully.")
-
         print("\n" + "=" * 60)
-        print("ALL OTP EMAIL VERIFICATION TESTS PASSED SUCCESSFULLY!")
+        print("ALL OTP EMAIL VERIFICATION TESTS PASSED PERFECTLY!")
         print("=" * 60)
 
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     run_tests()

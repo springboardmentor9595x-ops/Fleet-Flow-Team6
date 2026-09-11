@@ -1,3 +1,4 @@
+import app.config  # Ensures backend/.env is loaded reliably regardless of working directory
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware

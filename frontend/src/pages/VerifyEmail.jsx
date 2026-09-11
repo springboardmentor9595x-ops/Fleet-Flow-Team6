@@ -13,9 +13,6 @@ export default function VerifyEmail() {
   const [email, setEmail] = useState(() => {
     return location.state?.email || localStorage.getItem("pending_verify_email") || "";
   });
-  const [debugOtp, setDebugOtp] = useState(() => {
-    return location.state?.debug_otp || localStorage.getItem("pending_debug_otp") || null;
-  });
 
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
@@ -33,14 +30,6 @@ export default function VerifyEmail() {
       localStorage.setItem("pending_verify_email", email);
     }
   }, [email]);
-
-  useEffect(() => {
-    if (debugOtp) {
-      localStorage.setItem("pending_debug_otp", debugOtp);
-    } else {
-      localStorage.removeItem("pending_debug_otp");
-    }
-  }, [debugOtp]);
 
   // Focus first input on mount
   useEffect(() => {
@@ -182,7 +171,6 @@ export default function VerifyEmail() {
     try {
       const res = await resendOtp(email);
       setResendMessage(res?.message || "A new 6-digit OTP has been sent to your email.");
-      if (res?.debug_otp) setDebugOtp(res.debug_otp);
       setCountdown(60);
       // Clear inputs
       setOtp(["", "", "", "", "", ""]);
@@ -226,36 +214,6 @@ export default function VerifyEmail() {
               </span>
             </p>
 
-            {/* Dev-mode OTP banner when SMTP is not configured */}
-            {debugOtp && (
-              <div
-                style={{
-                  background: "rgba(245, 158, 11, 0.15)",
-                  border: "1px solid rgba(245, 158, 11, 0.4)",
-                  color: "#fbbf24",
-                  padding: "12px 16px",
-                  borderRadius: "10px",
-                  fontSize: "14px",
-                  marginBottom: "16px",
-                  textAlign: "center",
-                }}
-              >
-                <div style={{ fontSize: "12px", opacity: 0.8, marginBottom: 4 }}>
-                  SMTP not configured &mdash; Dev Mode OTP:
-                </div>
-                <div
-                  style={{
-                    fontFamily: "monospace",
-                    fontSize: "24px",
-                    fontWeight: 800,
-                    letterSpacing: "6px",
-                    color: "#f59e0b",
-                  }}
-                >
-                  {debugOtp}
-                </div>
-              </div>
-            )}
 
             {/* Email input field if missing */}
             {!email && (

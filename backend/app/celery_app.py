@@ -1,7 +1,7 @@
 import os
-from dotenv import load_dotenv
+from app.config import load_backend_env
 
-load_dotenv()
+load_backend_env()
 
 REDIS_URL = os.getenv("REDIS_URL", os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0"))
 

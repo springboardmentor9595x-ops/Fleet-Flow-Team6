@@ -2,9 +2,9 @@ from datetime import datetime, timedelta, timezone
 from jose import jwt
 from passlib.context import CryptContext
 import os
-from dotenv import load_dotenv
+from app.config import load_backend_env
 
-load_dotenv()
+load_backend_env()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
