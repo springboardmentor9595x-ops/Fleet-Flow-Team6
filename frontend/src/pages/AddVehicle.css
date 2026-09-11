@@ -1,0 +1,90 @@
+.vehicles-page {
+  min-height: 100vh;
+  background: #f4f7fb;
+  padding: 35px;
+}
+
+.vehicles-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 25px;
+}
+
+.vehicles-header h1 {
+  margin: 0;
+  color: #172554;
+  font-size: 32px;
+}
+
+.add-vehicle-button {
+  background: #2563eb;
+  color: white;
+  text-decoration: none;
+  padding: 11px 18px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.add-vehicle-button:hover {
+  background: #1d4ed8;
+}
+
+.vehicle-table-container {
+  background: white;
+  border-radius: 14px;
+  overflow-x: auto;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+}
+
+.vehicle-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 950px;
+}
+
+.vehicle-table th {
+  background: #172554;
+  color: white;
+  padding: 15px;
+  text-align: left;
+  font-size: 14px;
+}
+
+.vehicle-table td {
+  padding: 14px 15px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #334155;
+}
+
+.vehicle-table tr:hover {
+  background: #f8fafc;
+}
+
+.status {
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.status-available {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-assigned {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.status-maintenance {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-transit {
+  background: #ede9fe;
+  color: #6b21a8;
+}
