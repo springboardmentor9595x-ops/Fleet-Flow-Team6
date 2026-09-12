@@ -300,8 +300,8 @@ def schedule_trip(
     Schedule a trip by linking a shipment, vehicle, and driver, generating the planned OSRM route.
     """
     role_str = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role)
-    if role_str == "Dispatcher":
-        raise HTTPException(status_code=403, detail="Access denied: Dispatchers cannot schedule trips.")
+    if role_str not in ["Admin", "FleetManager", "Dispatcher", "Driver"]:
+        raise HTTPException(status_code=403, detail="Access denied: Your role cannot schedule trips.")
 
     if role_str == "Driver":
         driver = db.query(Driver).filter(Driver.user_id == current_user.user_id).first()
@@ -401,8 +401,8 @@ def start_trip(
     db: Session = Depends(get_db)
 ):
     role_str = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role)
-    if role_str == "Dispatcher":
-        raise HTTPException(status_code=403, detail="Access denied: Dispatchers cannot start trips.")
+    if role_str not in ["Admin", "FleetManager", "Dispatcher", "Driver"]:
+        raise HTTPException(status_code=403, detail="Access denied: Your role cannot start trips.")
 
     try:
         trip_uuid = uuid.UUID(trip_id)
@@ -458,8 +458,6 @@ def end_trip(
     db: Session = Depends(get_db)
 ):
     role_str = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role)
-    if role_str == "Dispatcher":
-        raise HTTPException(status_code=403, detail="Access denied: Dispatchers cannot end trips.")
 
     try:
         trip_uuid = uuid.UUID(trip_id)
@@ -549,7 +547,7 @@ def recalculate_trip_route(trip_id: str, db: Session = Depends(get_db)):
     }
 
 @router.delete("/trips/{trip_id}")
-def delete_trip(trip_id: str, current_user: User = Depends(require_roles(["Admin", "FleetManager"])), db: Session = Depends(get_db)):
+def delete_trip(trip_id: str, current_user: User = Depends(require_roles(["Admin", "FleetManager", "Dispatcher"])), db: Session = Depends(get_db)):
     trip_uuid = uuid.UUID(trip_id)
     trip = db.query(Trip).filter(Trip.trip_id == trip_uuid).first()
     if not trip:

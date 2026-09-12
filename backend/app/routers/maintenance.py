@@ -248,3 +248,9 @@ def delete_maintenance(
     db.delete(m)
     db.commit()
     return {"message": "Maintenance record deleted successfully"}
+
+
+@router.post("/check-alerts")
+def trigger_maintenance_alerts(current_user: User = Depends(get_current_user)):
+    res = run_maintenance_alert_check()
+    return res

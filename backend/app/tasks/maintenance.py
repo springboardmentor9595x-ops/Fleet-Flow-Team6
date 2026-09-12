@@ -86,6 +86,24 @@ def check_maintenance_alerts():
                     db.add(new_notif)
                     alerts_triggered += 1
 
+                # Driver 1-day prior email notification
+                if days_remaining == 1 and vehicle and vehicle.assigned_driver:
+                    driver = db.query(Driver).filter(Driver.driver_id == vehicle.assigned_driver).first()
+                    if driver and driver.user_id:
+                        driver_user = db.query(User).filter(User.user_id == driver.user_id).first()
+                        if driver_user and driver_user.email:
+                            try:
+                                from app.services.email_service import send_maintenance_reminder_email
+                                send_maintenance_reminder_email(
+                                    email=driver_user.email,
+                                    name=driver_user.full_name,
+                                    vehicle_reg=v_reg,
+                                    maintenance_type=record.maintenance_type,
+                                    service_date=str(record.next_service_date)
+                                )
+                            except Exception as email_ex:
+                                print(f"Email reminder exception for driver {driver_user.email}: {email_ex}")
+
                 # Also create a system-wide notification (user_id=None) if target_user_ids is empty
                 if not target_user_ids:
                     new_notif = Notification(

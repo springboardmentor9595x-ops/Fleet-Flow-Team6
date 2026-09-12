@@ -346,7 +346,7 @@ export default function Trips() {
                     {/* Operations Controls */}
                     <td style={{ padding: "1rem" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                        {isOpsRole && trip.status === "pending" && (
+                        {isOpsRole && (trip.status === "pending" || trip.status === "Scheduled" || trip.status === "Created") && (
                           <button
                             onClick={() => handleStartTrip(trip.trip_id)}
                             style={{
@@ -368,7 +368,7 @@ export default function Trips() {
                           </button>
                         )}
 
-                        {isOpsRole && trip.status === "active" && (
+                        {isOpsRole && (trip.status === "active" || trip.status === "In Transit") && (
                           <button
                             onClick={() => handleEndTrip(trip.trip_id)}
                             style={{
